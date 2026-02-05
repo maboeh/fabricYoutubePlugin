@@ -1,0 +1,86 @@
+/* Floating Save Button for YouTube */
+
+#fabric-save-button {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 9999;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  border: none;
+  border-radius: 50px;
+
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+
+  transition: all 0.2s ease;
+  opacity: 0.9;
+}
+
+#fabric-save-button:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.5);
+}
+
+#fabric-save-button:active {
+  transform: translateY(0);
+}
+
+#fabric-save-button svg {
+  flex-shrink: 0;
+}
+
+#fabric-save-button.saving {
+  background: linear-gradient(135deg, #6b7280, #9ca3af);
+  cursor: wait;
+}
+
+#fabric-save-button.saved {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+#fabric-save-button.error {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+/* Animation for saving state */
+#fabric-save-button.saving svg {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Hide on fullscreen video */
+:fullscreen #fabric-save-button,
+:-webkit-full-screen #fabric-save-button,
+:-moz-full-screen #fabric-save-button {
+  display: none;
+}
+
+/* Responsive positioning */
+@media (max-width: 768px) {
+  #fabric-save-button {
+    bottom: 100px;
+    right: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}

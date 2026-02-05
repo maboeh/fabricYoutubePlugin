@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube to Fabric",
+  "description": "Save YouTube videos as link notes to your Fabric.so account",
+  "version": "1.0.0",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "cookies",
+    "contextMenus",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://fabric.so/*",
+    "https://*.fabric.so/*",
+    "https://api.fabric.so/*",
+    "https://developers.fabric.so/*"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "commands": {
+    "save-to-fabric": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Save current YouTube video to Fabric"
+    }
+  }
+}

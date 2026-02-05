@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube to Fabric</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>YouTube to Fabric</h1>
+    </header>
+
+    <!-- Login Section -->
+    <div id="login-section" class="section hidden">
+      <p class="info-text">Melde dich bei deinem Fabric.so Konto an:</p>
+      <div class="form-group">
+        <label for="api-key">API Key / Session Token:</label>
+        <input type="password" id="api-key" placeholder="Dein Fabric API Key">
+        <small class="help-text">
+          Finde deinen Token in den Fabric.so Entwicklertools (F12 > Network > Headers)
+        </small>
+      </div>
+      <button id="save-credentials" class="btn btn-primary">Anmelden</button>
+    </div>
+
+    <!-- Logged In Section -->
+    <div id="logged-in-section" class="section hidden">
+      <div class="status-bar">
+        <span class="status-indicator online"></span>
+        <span>Verbunden mit Fabric</span>
+        <button id="logout-btn" class="btn-link">Abmelden</button>
+      </div>
+    </div>
+
+    <!-- Video Info Section -->
+    <div id="video-section" class="section hidden">
+      <div class="video-info">
+        <img id="video-thumbnail" src="" alt="Video Thumbnail" class="thumbnail">
+        <div class="video-details">
+          <h3 id="video-title">Video Titel</h3>
+          <p id="video-channel" class="channel-name">Channel Name</p>
+        </div>
+      </div>
+      <button id="save-to-fabric" class="btn btn-primary btn-large">
+        <span class="btn-icon">+</span>
+        In Fabric speichern
+      </button>
+      <p class="shortcut-hint">Tipp: Nutze <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> als Shortcut</p>
+    </div>
+
+    <!-- No Video Section -->
+    <div id="no-video-section" class="section hidden">
+      <div class="empty-state">
+        <div class="empty-icon">&#127909;</div>
+        <p>Kein YouTube Video erkannt</p>
+        <small>Öffne ein YouTube Video und klicke erneut auf das Plugin</small>
+      </div>
+    </div>
+
+    <!-- Success Message -->
+    <div id="success-message" class="message success hidden">
+      <span class="message-icon">&#10003;</span>
+      <span>Video erfolgreich in Fabric gespeichert!</span>
+    </div>
+
+    <!-- Error Message -->
+    <div id="error-message" class="message error hidden">
+      <span class="message-icon">&#10007;</span>
+      <span id="error-text">Ein Fehler ist aufgetreten</span>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>Wird gespeichert...</span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

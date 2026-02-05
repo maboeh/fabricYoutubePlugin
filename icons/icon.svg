@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="128" height="128" rx="24" fill="url(#grad)"/>
+  <!-- YouTube Play icon -->
+  <path d="M52 44 L52 84 L88 64 Z" fill="white"/>
+  <!-- Plus icon (for save) -->
+  <circle cx="96" cy="96" r="20" fill="#22c55e"/>
+  <path d="M96 86 L96 106 M86 96 L106 96" stroke="white" stroke-width="4" stroke-linecap="round"/>
+</svg>
