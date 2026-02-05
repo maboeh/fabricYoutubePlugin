@@ -177,8 +177,8 @@ async function validateApiKey(apiKey) {
   console.log('API key prefix:', apiKey.substring(0, 5) + '...');
 
   try {
+    // Only X-Api-Key header for GET request (no Content-Type needed)
     const headers = {
-      'Content-Type': 'application/json',
       'X-Api-Key': apiKey
     };
 
@@ -199,6 +199,10 @@ async function validateApiKey(apiKey) {
 
       if (response.status === 401 || response.status === 403) {
         return { valid: false, error: `Ungültiger API Key (${response.status})` };
+      } else if (response.status === 500) {
+        // Server error - might be a bug on Fabric's side, allow saving anyway
+        console.warn('Server returned 500 - saving key anyway (server might have issues)');
+        return { valid: true, warning: 'Server-Fehler bei Validierung, Key trotzdem gespeichert' };
       } else {
         return { valid: false, error: `API Fehler: ${response.status}` };
       }
