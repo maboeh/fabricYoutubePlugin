@@ -24,7 +24,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// Handle the save shortcut
+// Handle the save shortcut - returns result for message response
 async function handleSaveShortcut() {
   try {
     // Get the active tab
@@ -32,13 +32,13 @@ async function handleSaveShortcut() {
 
     if (!tab || !tab.url) {
       await showNotification('Fehler', 'Kein aktiver Tab gefunden');
-      return;
+      return { success: false, error: 'Kein aktiver Tab' };
     }
 
     // Check if it's a YouTube video
     if (!isYouTubeVideoUrl(tab.url)) {
       await showNotification('Kein YouTube Video', 'Bitte öffne ein YouTube Video');
-      return;
+      return { success: false, error: 'Kein YouTube Video' };
     }
 
     // Get credentials
@@ -46,7 +46,7 @@ async function handleSaveShortcut() {
 
     if (!credentials || !credentials.apiKey) {
       await showNotification('Nicht angemeldet', 'Bitte öffne das Plugin und melde dich an');
-      return;
+      return { success: false, error: 'Nicht angemeldet' };
     }
 
     // Get video info from content script if possible
@@ -72,15 +72,18 @@ async function handleSaveShortcut() {
 
     if (result.success) {
       await showNotification('Gespeichert!', `"${videoInfo.title}" wurde in Fabric gespeichert`);
+      return { success: true };
     } else {
       // Show error notification (no fallback that opens Fabric)
       const errorMsg = result.error || 'Unbekannter Fehler';
       console.error('Save to Fabric failed:', errorMsg);
       await showNotification('Fehler', `Speichern fehlgeschlagen: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
   } catch (error) {
     console.error('Error in shortcut handler:', error);
     await showNotification('Fehler', 'Ein Fehler ist aufgetreten');
+    return { success: false, error: error.message };
   }
 }
 
@@ -287,7 +290,7 @@ async function showNotification(title, message) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'saveToFabric') {
     handleSaveShortcut()
-      .then(() => sendResponse({ success: true }))
+      .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
