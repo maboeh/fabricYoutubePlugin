@@ -261,10 +261,7 @@ async function handleSaveToFabric() {
     }
   } catch (error) {
     console.error('Error saving to Fabric:', error);
-    showError('Verbindungsfehler. Versuche den Fallback...');
-
-    // Fallback: Open Fabric with the URL
-    openFabricFallback(currentVideoInfo.url);
+    showError('Verbindungsfehler: ' + error.message);
   }
 }
 
@@ -319,15 +316,22 @@ async function saveToFabric(videoInfo, apiKey) {
     const errorText = await response.text();
     console.error('API response error:', response.status, errorText);
 
-    // Try to parse error message
-    let errorMessage = `API Fehler: ${response.status}`;
-    try {
-      const errorJson = JSON.parse(errorText);
-      if (errorJson.message) {
-        errorMessage = errorJson.message;
+    // Provide specific error messages
+    let errorMessage;
+    if (response.status === 401 || response.status === 403) {
+      errorMessage = 'API Key ungültig oder abgelaufen';
+    } else if (response.status === 400) {
+      errorMessage = 'Ungültige Anfrage';
+    } else if (response.status === 429) {
+      errorMessage = 'Zu viele Anfragen - bitte warten';
+    } else {
+      // Try to parse error message from response
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.message || `API Fehler ${response.status}`;
+      } catch (e) {
+        errorMessage = `API Fehler ${response.status}`;
       }
-    } catch (e) {
-      // Keep default error message
     }
 
     return { success: false, error: errorMessage };
@@ -335,20 +339,6 @@ async function saveToFabric(videoInfo, apiKey) {
     console.error('API error:', error);
     return { success: false, error: error.message };
   }
-}
-
-// Fallback: Open Fabric website with the URL
-function openFabricFallback(url) {
-  const fabricUrl = `${config.baseUrl}/home`;
-
-  // Copy URL to clipboard
-  navigator.clipboard.writeText(url).then(() => {
-    chrome.tabs.create({ url: fabricUrl });
-    showSuccess('URL kopiert! Füge sie in Fabric ein (Cmd/Ctrl+V)');
-  }).catch(() => {
-    chrome.tabs.create({ url: fabricUrl });
-    showError('Öffne Fabric und füge die URL manuell ein');
-  });
 }
 
 // UI State functions

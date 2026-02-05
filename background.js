@@ -62,14 +62,10 @@ async function handleSaveShortcut() {
     if (result.success) {
       await showNotification('Gespeichert!', `"${videoInfo.title}" wurde in Fabric gespeichert`);
     } else {
-      // Fallback: Copy URL and open Fabric
-      const copied = await copyToClipboard(videoInfo.url, tab.id);
-      chrome.tabs.create({ url: `${DEFAULT_CONFIG.baseUrl}/home` });
-      if (copied) {
-        await showNotification('URL kopiert', 'Füge die URL in Fabric ein (Ctrl+V)');
-      } else {
-        await showNotification('Fabric geöffnet', 'Kopiere die URL manuell');
-      }
+      // Show error notification (no fallback that opens Fabric)
+      const errorMsg = result.error || 'Unbekannter Fehler';
+      console.error('Save to Fabric failed:', errorMsg);
+      await showNotification('Fehler', `Speichern fehlgeschlagen: ${errorMsg}`);
     }
   } catch (error) {
     console.error('Error in shortcut handler:', error);
@@ -194,7 +190,20 @@ async function saveToFabric(videoInfo, apiKey) {
 
     const errorText = await response.text();
     console.error('API response error:', response.status, errorText);
-    return { success: false, error: `API request failed: ${response.status}` };
+
+    // Provide specific error messages
+    let errorMessage;
+    if (response.status === 401 || response.status === 403) {
+      errorMessage = 'API Key ungültig oder abgelaufen';
+    } else if (response.status === 400) {
+      errorMessage = 'Ungültige Anfrage';
+    } else if (response.status === 429) {
+      errorMessage = 'Zu viele Anfragen - bitte warten';
+    } else {
+      errorMessage = `API Fehler ${response.status}`;
+    }
+
+    return { success: false, error: errorMessage };
   } catch (error) {
     console.error('API error:', error);
     return { success: false, error: error.message };
