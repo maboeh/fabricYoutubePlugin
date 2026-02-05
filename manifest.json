@@ -9,7 +9,9 @@
     "cookies",
     "contextMenus",
     "notifications",
-    "scripting"
+    "scripting",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
@@ -49,6 +51,15 @@
       "css": ["content.css"]
     }
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "commands": {
     "save-to-fabric": {
       "suggested_key": {
