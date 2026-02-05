@@ -12,7 +12,9 @@ import {
 const RETRY_CONFIG = {
   maxRetries: 2,
   delayMs: 1000,
-  backoffMultiplier: 2
+  backoffMultiplier: 2,
+  rateLimitDelayMs: 5000,  // Longer delay for 429 responses
+  playlistDelayMs: 500     // Delay between playlist items
 };
 
 // Listen for keyboard shortcut
@@ -224,16 +226,24 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
       };
     }
 
-    // Don't retry on client errors (4xx)
-    if (response.status >= 400 && response.status < 500) {
-      let errorMessage = 'Ungültige Anfrage';
-      if (response.status === 429) {
-        errorMessage = 'Zu viele Anfragen - bitte warten';
+    // Handle rate limiting (429) - retry with longer delay
+    if (response.status === 429) {
+      if (retryCount < RETRY_CONFIG.maxRetries) {
+        // Check for Retry-After header, default to rateLimitDelayMs
+        const retryAfter = response.headers.get('Retry-After');
+        const delay = retryAfter ? parseInt(retryAfter) * 1000 : RETRY_CONFIG.rateLimitDelayMs;
+        await sleep(delay);
+        return saveToFabric(videoInfo, apiKey, retryCount + 1);
       }
-      return { success: false, error: errorMessage };
+      return { success: false, error: 'Zu viele Anfragen - bitte später erneut versuchen' };
     }
 
-    // Retry on server errors (5xx) or network issues
+    // Don't retry on other client errors (4xx)
+    if (response.status >= 400 && response.status < 500) {
+      return { success: false, error: 'Ungültige Anfrage' };
+    }
+
+    // Retry on server errors (5xx)
     if (retryCount < RETRY_CONFIG.maxRetries) {
       const delay = RETRY_CONFIG.delayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, retryCount);
       await sleep(delay);
@@ -349,7 +359,7 @@ async function savePlaylistToFabric(videos, apiKey, tabId) {
 
     // Small delay between saves to avoid rate limiting
     if (i < videos.length - 1) {
-      await sleep(500);
+      await sleep(RETRY_CONFIG.playlistDelayMs);
     }
   }
 

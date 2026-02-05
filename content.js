@@ -116,10 +116,9 @@
     return info;
   }
 
-  // Check if current page is a playlist
+  // Check if current page is a dedicated playlist page (not video in playlist)
   function isPlaylistPage() {
-    return window.location.pathname === '/playlist' ||
-           window.location.search.includes('list=');
+    return window.location.pathname === '/playlist';
   }
 
   // Get playlist information
@@ -128,7 +127,9 @@
       isPlaylist: isPlaylistPage(),
       playlistId: null,
       playlistTitle: null,
-      videos: []
+      videos: [],
+      totalVideos: null,  // Total videos in playlist (if available)
+      visibleVideos: 0    // Currently loaded/visible videos
     };
 
     if (!info.isPlaylist) return info;
@@ -146,8 +147,21 @@
         info.playlistTitle = titleElement.textContent?.trim();
       }
 
-      // Get all video links in the playlist
+      // Try to get total video count from header
+      const statsElement = document.querySelector('yt-formatted-string.ytd-playlist-sidebar-primary-info-renderer') ||
+                           document.querySelector('.metadata-stats');
+      if (statsElement) {
+        const statsText = statsElement.textContent;
+        const countMatch = statsText.match(/(\d+)\s*(videos?|Videos?)/i);
+        if (countMatch) {
+          info.totalVideos = parseInt(countMatch[1]);
+        }
+      }
+
+      // Get all video links in the playlist (only currently loaded/visible ones)
       const videoElements = document.querySelectorAll('ytd-playlist-video-renderer');
+      info.visibleVideos = videoElements.length;
+
       videoElements.forEach((element, index) => {
         const linkElement = element.querySelector('a#video-title');
         const channelElement = element.querySelector('ytd-channel-name a') ||

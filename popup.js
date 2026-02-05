@@ -7,7 +7,6 @@ import {
   extractVideoId,
   getThumbnailUrl,
   getStorage,
-  setStorage,
   removeStorage
 } from './shared/constants.js';
 
@@ -89,16 +88,16 @@ async function checkAuthStatus() {
 
 // Get stored credentials from Chrome storage
 async function getStoredCredentials() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([STORAGE_KEYS.API_KEY], (result) => {
-      resolve({
-        apiKey: result[STORAGE_KEYS.API_KEY]
-      });
-    });
-  });
+  try {
+    const result = await getStorage([STORAGE_KEYS.API_KEY]);
+    return { apiKey: result[STORAGE_KEYS.API_KEY] };
+  } catch (error) {
+    console.error('Error getting credentials:', error);
+    return { apiKey: null };
+  }
 }
 
-// Store credentials
+// Store credentials via background script (avoids CORS issues)
 async function storeCredentials(apiKey) {
   return new Promise((resolve) => {
     chrome.storage.local.set({
@@ -109,9 +108,11 @@ async function storeCredentials(apiKey) {
 
 // Clear credentials
 async function clearCredentials() {
-  return new Promise((resolve) => {
-    chrome.storage.local.remove([STORAGE_KEYS.API_KEY], resolve);
-  });
+  try {
+    await removeStorage([STORAGE_KEYS.API_KEY]);
+  } catch (error) {
+    console.error('Error clearing credentials:', error);
+  }
 }
 
 // Check current tab for YouTube video or playlist
@@ -181,7 +182,12 @@ function displayPlaylistInfo(info) {
     elements.playlistTitle.textContent = info.playlistTitle || 'Unbekannte Playlist';
   }
   if (elements.playlistCount) {
-    elements.playlistCount.textContent = `${info.videos.length} Videos`;
+    // Show visible vs total if we know the total
+    if (info.totalVideos && info.totalVideos > info.visibleVideos) {
+      elements.playlistCount.textContent = `${info.visibleVideos} von ${info.totalVideos} Videos geladen`;
+    } else {
+      elements.playlistCount.textContent = `${info.videos.length} Videos`;
+    }
   }
 }
 
@@ -403,12 +409,18 @@ function showNoVideo() {
 
 function showLoading() {
   elements.saveToFabricBtn.disabled = true;
+  if (elements.savePlaylistBtn) {
+    elements.savePlaylistBtn.disabled = true;
+  }
   elements.loading.classList.remove('hidden');
   hideMessages();
 }
 
 function hideLoading() {
   elements.saveToFabricBtn.disabled = false;
+  if (elements.savePlaylistBtn) {
+    elements.savePlaylistBtn.disabled = false;
+  }
   elements.loading.classList.add('hidden');
 }
 
@@ -446,6 +458,10 @@ function showError(message) {
 function hideMessages() {
   elements.successMessage.classList.add('hidden');
   elements.errorMessage.classList.add('hidden');
+  // Hide "Open in Fabric" button when starting new action
+  if (elements.openInFabricBtn) {
+    elements.openInFabricBtn.classList.add('hidden');
+  }
 }
 
 function hideAllSections() {

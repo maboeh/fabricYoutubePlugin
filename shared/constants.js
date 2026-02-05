@@ -46,30 +46,48 @@ export function isYouTubeVideoUrl(url) {
   );
 }
 
-// Check if URL is a YouTube playlist
+// Check if URL is a YouTube playlist page (not video in playlist)
 export function isYouTubePlaylistUrl(url) {
   if (!url) return false;
-  return url.includes(YOUTUBE_PATTERNS.PLAYLIST);
+  // Only match dedicated playlist pages, not videos within playlists
+  return url.includes(YOUTUBE_PATTERNS.PLAYLIST) && !url.includes('/watch');
 }
 
-// Extract playlist ID from YouTube URL
-export function extractPlaylistId(url) {
-  if (!url) return null;
-  const match = url.match(/[?&]list=([^&]+)/);
-  return match ? match[1] : null;
-}
-
-// Storage helper functions (Promise-based)
+// Storage helper functions (Promise-based with error handling)
 export async function getStorage(keys) {
-  return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(keys, (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(result);
+      }
+    });
+  });
 }
 
 export async function setStorage(obj) {
-  return new Promise(resolve => chrome.storage.local.set(obj, resolve));
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(obj, (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(result);
+      }
+    });
+  });
 }
 
 export async function removeStorage(keys) {
-  return new Promise(resolve => chrome.storage.local.remove(keys, resolve));
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.remove(keys, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 // Extract video ID from YouTube URL
