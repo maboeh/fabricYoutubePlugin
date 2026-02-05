@@ -172,26 +172,40 @@ function setupEventListeners() {
 
 // Validate API key by testing against user endpoint
 async function validateApiKey(apiKey) {
+  const url = `${config.apiUrl}/v2/user/me`;
+  console.log('Validating API key against:', url);
+  console.log('API key prefix:', apiKey.substring(0, 5) + '...');
+
   try {
     const headers = {
       'Content-Type': 'application/json',
       'X-Api-Key': apiKey
     };
 
-    const response = await fetch(`${config.apiUrl}/v2/user/me`, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: headers
     });
 
+    console.log('Validation response status:', response.status);
+
     if (response.ok) {
+      const data = await response.json();
+      console.log('Validation success:', data);
       return { valid: true };
-    } else if (response.status === 401 || response.status === 403) {
-      return { valid: false, error: 'Ungültiger API Key' };
     } else {
-      return { valid: false, error: `API Fehler: ${response.status}` };
+      const errorText = await response.text();
+      console.error('Validation failed:', response.status, errorText);
+
+      if (response.status === 401 || response.status === 403) {
+        return { valid: false, error: `Ungültiger API Key (${response.status})` };
+      } else {
+        return { valid: false, error: `API Fehler: ${response.status}` };
+      }
     }
   } catch (error) {
-    return { valid: false, error: 'Verbindung fehlgeschlagen' };
+    console.error('Validation error:', error);
+    return { valid: false, error: 'Verbindung fehlgeschlagen: ' + error.message };
   }
 }
 
