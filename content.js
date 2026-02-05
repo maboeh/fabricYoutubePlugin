@@ -261,7 +261,6 @@
 
       try {
         const response = await chrome.runtime.sendMessage({ action: 'saveToFabric' });
-        console.log('[Fabric] Save response:', response);
 
         if (response && response.success) {
           button.classList.remove('saving');
@@ -274,12 +273,9 @@
           }, 2000);
         } else {
           // Show specific error message
-          const errorMsg = response?.error || 'Unbekannter Fehler';
-          console.error('[Fabric] Save failed:', errorMsg);
-          throw new Error(errorMsg);
+          throw new Error(response?.error || 'Unbekannter Fehler');
         }
       } catch (error) {
-        console.error('[Fabric] Error:', error);
         button.classList.remove('saving');
         button.classList.add('error');
         // Show short error hint if not logged in
