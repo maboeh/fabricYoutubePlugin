@@ -261,6 +261,7 @@
 
       try {
         const response = await chrome.runtime.sendMessage({ action: 'saveToFabric' });
+        console.log('[Fabric] Save response:', response);
 
         if (response && response.success) {
           button.classList.remove('saving');
@@ -272,17 +273,23 @@
             button.querySelector('span').textContent = 'Fabric';
           }, 2000);
         } else {
-          throw new Error('Save failed');
+          // Show specific error message
+          const errorMsg = response?.error || 'Unbekannter Fehler';
+          console.error('[Fabric] Save failed:', errorMsg);
+          throw new Error(errorMsg);
         }
       } catch (error) {
+        console.error('[Fabric] Error:', error);
         button.classList.remove('saving');
         button.classList.add('error');
-        button.querySelector('span').textContent = 'Fehler';
+        // Show short error hint if not logged in
+        const isAuthError = error.message?.includes('angemeldet') || error.message?.includes('API');
+        button.querySelector('span').textContent = isAuthError ? 'Login!' : 'Fehler';
 
         setTimeout(() => {
           button.classList.remove('error');
           button.querySelector('span').textContent = 'Fabric';
-        }, 2000);
+        }, 3000);
       }
     });
 

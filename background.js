@@ -288,10 +288,18 @@ async function showNotification(title, message) {
 
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[Fabric] Received message:', request.action);
+
   if (request.action === 'saveToFabric') {
     handleSaveShortcut()
-      .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
+      .then((result) => {
+        console.log('[Fabric] handleSaveShortcut result:', result);
+        sendResponse(result);
+      })
+      .catch((error) => {
+        console.error('[Fabric] handleSaveShortcut error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 
