@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:fabric.so)",
+      "WebFetch(domain:developers.fabric.so)",
+      "WebFetch(domain:api.fabric.so)",
+      "WebFetch(domain:docs.fabric.so)",
+      "WebFetch(domain:chromewebstore.google.com)",
+      "WebFetch(domain:chrome-stats.com)",
+      "WebFetch(domain:addons.mozilla.org)",
+      "WebFetch(domain:zapier.com)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}

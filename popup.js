@@ -119,7 +119,6 @@ async function checkCurrentTab() {
         }
       } catch (e) {
         // Content script might not be loaded, extract basic info from URL
-        console.log('Content script not available, using basic info');
       }
 
       // Fallback: Extract basic info from tab
@@ -172,14 +171,10 @@ function setupEventListeners() {
 
 // Validate API key via background script (avoids CORS issues)
 async function validateApiKey(apiKey) {
-  console.log('Validating API key via background script...');
-  console.log('API key prefix:', apiKey.substring(0, 5) + '...');
-
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { action: 'validateApiKey', apiKey: apiKey },
       (response) => {
-        console.log('Validation response:', response);
         resolve(response || { valid: false, error: 'Keine Antwort vom Background Script' });
       }
     );
@@ -258,13 +253,10 @@ async function handleSaveToFabric() {
 
 // Save to Fabric via background script (avoids CORS issues)
 async function saveToFabric(videoInfo, apiKey) {
-  console.log('Saving to Fabric via background script...');
-
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { action: 'saveVideoToFabric', videoInfo: videoInfo, apiKey: apiKey },
       (response) => {
-        console.log('Save response:', response);
         resolve(response || { success: false, error: 'Keine Antwort vom Background Script' });
       }
     );
