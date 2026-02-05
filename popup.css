@@ -292,3 +292,56 @@ kbd {
   color: #4a4a4a;
   margin-bottom: 12px;
 }
+
+/* Playlist Section */
+.playlist-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #faf5ff;
+  border-radius: 10px;
+}
+
+.playlist-icon {
+  font-size: 32px;
+}
+
+.playlist-details {
+  flex: 1;
+}
+
+.playlist-details h3 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.playlist-count {
+  font-size: 11px;
+  color: #7c3aed;
+  font-weight: 500;
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background: #f3f4f6;
+  color: #4a4a4a;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+.btn-small {
+  padding: 8px 12px;
+  font-size: 12px;
+}

@@ -59,11 +59,32 @@
       </div>
     </div>
 
+    <!-- Playlist Section -->
+    <div id="playlist-section" class="section hidden">
+      <div class="playlist-info">
+        <div class="playlist-icon">&#127911;</div>
+        <div class="playlist-details">
+          <h3 id="playlist-title">Playlist Titel</h3>
+          <p id="playlist-count" class="playlist-count">0 Videos</p>
+        </div>
+      </div>
+      <button id="save-playlist" class="btn btn-primary btn-large">
+        <span class="btn-icon">+</span>
+        Alle Videos speichern
+      </button>
+      <p class="shortcut-hint">Alle Videos der Playlist werden in Fabric gespeichert</p>
+    </div>
+
     <!-- Success Message -->
     <div id="success-message" class="message success hidden">
       <span class="message-icon">&#10003;</span>
       <span>Video erfolgreich in Fabric gespeichert!</span>
     </div>
+
+    <!-- Open in Fabric Button -->
+    <button id="open-in-fabric" class="btn btn-secondary btn-small hidden">
+      In Fabric öffnen
+    </button>
 
     <!-- Error Message -->
     <div id="error-message" class="message error hidden">

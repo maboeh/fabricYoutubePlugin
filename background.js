@@ -3,8 +3,17 @@ import {
   STORAGE_KEYS,
   DEFAULT_CONFIG,
   isYouTubeVideoUrl,
-  extractVideoId
+  extractVideoId,
+  getStorage,
+  removeStorage
 } from './shared/constants.js';
+
+// Retry configuration
+const RETRY_CONFIG = {
+  maxRetries: 2,
+  delayMs: 1000,
+  backoffMultiplier: 2
+};
 
 // Listen for keyboard shortcut
 chrome.commands.onCommand.addListener(async (command) => {
@@ -75,45 +84,44 @@ async function handleSaveShortcut() {
 
 // Get stored credentials
 async function getStoredCredentials() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([STORAGE_KEYS.API_KEY], (result) => {
-      resolve({
-        apiKey: result[STORAGE_KEYS.API_KEY]
-      });
-    });
-  });
+  const result = await getStorage([STORAGE_KEYS.API_KEY]);
+  return { apiKey: result[STORAGE_KEYS.API_KEY] };
 }
 
 // Get stored settings
 async function getStoredSettings() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([
-      STORAGE_KEYS.SHOW_NOTIFICATIONS,
-      STORAGE_KEYS.AUTO_COPY_URL
-    ], (result) => {
-      resolve({
-        showNotifications: result[STORAGE_KEYS.SHOW_NOTIFICATIONS] !== false,
-        autoCopyUrl: result[STORAGE_KEYS.AUTO_COPY_URL] === true
-      });
-    });
-  });
+  const result = await getStorage([
+    STORAGE_KEYS.SHOW_NOTIFICATIONS,
+    STORAGE_KEYS.AUTO_COPY_URL
+  ]);
+  return {
+    showNotifications: result[STORAGE_KEYS.SHOW_NOTIFICATIONS] !== false,
+    autoCopyUrl: result[STORAGE_KEYS.AUTO_COPY_URL] === true
+  };
 }
 
 // Get stored API config
 async function getStoredConfig() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([
-      STORAGE_KEYS.API_BASE_URL,
-      STORAGE_KEYS.API_ENDPOINT,
-      STORAGE_KEYS.AUTH_TYPE
-    ], (result) => {
-      resolve({
-        apiUrl: result[STORAGE_KEYS.API_BASE_URL] || DEFAULT_CONFIG.apiUrl,
-        endpoint: result[STORAGE_KEYS.API_ENDPOINT] || DEFAULT_CONFIG.endpoint,
-        authType: result[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType
-      });
-    });
-  });
+  const result = await getStorage([
+    STORAGE_KEYS.API_BASE_URL,
+    STORAGE_KEYS.API_ENDPOINT,
+    STORAGE_KEYS.AUTH_TYPE
+  ]);
+  return {
+    apiUrl: result[STORAGE_KEYS.API_BASE_URL] || DEFAULT_CONFIG.apiUrl,
+    endpoint: result[STORAGE_KEYS.API_ENDPOINT] || DEFAULT_CONFIG.endpoint,
+    authType: result[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType
+  };
+}
+
+// Clear credentials (on auth failure)
+async function clearCredentials() {
+  await removeStorage([STORAGE_KEYS.API_KEY]);
+}
+
+// Sleep helper for retry delays
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // Copy text to clipboard via content script (Service Worker can't use navigator.clipboard)
@@ -144,8 +152,8 @@ async function copyToClipboard(text, tabId) {
   }
 }
 
-// Save to Fabric API (v2)
-async function saveToFabric(videoInfo, apiKey) {
+// Save to Fabric API (v2) with retry logic
+async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
   const config = await getStoredConfig();
 
   try {
@@ -154,25 +162,35 @@ async function saveToFabric(videoInfo, apiKey) {
     };
 
     // Set auth headers based on auth type
-    // Fabric API uses X-Api-Key (not X-API-Key or Authorization Bearer)
     if (config.authType === 'apikey') {
       headers['X-Api-Key'] = apiKey;
     } else if (config.authType === 'oauth2') {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    // Build request body according to Fabric API v2 spec
+    // Build rich tags
+    const tags = [{ name: 'YouTube' }];
+    if (videoInfo.channel && videoInfo.channel !== 'YouTube') {
+      tags.push({ name: videoInfo.channel });
+    }
+
+    // Build request body with rich metadata
     const requestBody = {
       url: videoInfo.url,
-      parentId: DEFAULT_CONFIG.defaultParentId,  // @alias::inbox
+      parentId: DEFAULT_CONFIG.defaultParentId,
       name: videoInfo.title || null,
-      tags: [{ name: 'YouTube' }]
+      tags: tags
     };
 
-    // Add comment with video details
-    if (videoInfo.channel) {
+    // Add detailed comment with video metadata
+    const commentParts = [];
+    if (videoInfo.channel) commentParts.push(`Channel: ${videoInfo.channel}`);
+    if (videoInfo.duration) commentParts.push(`Dauer: ${videoInfo.duration}`);
+    if (videoInfo.description) commentParts.push(`\n${videoInfo.description}`);
+
+    if (commentParts.length > 0) {
       requestBody.comment = {
-        content: `Channel: ${videoInfo.channel}`
+        content: commentParts.join('\n')
       };
     }
 
@@ -185,28 +203,55 @@ async function saveToFabric(videoInfo, apiKey) {
 
     if (response.ok) {
       const data = await response.json();
-      return { success: true, data };
+      return {
+        success: true,
+        data,
+        bookmarkId: data.id,
+        bookmarkUrl: `${DEFAULT_CONFIG.baseUrl}/resources/${data.id}`
+      };
     }
 
     const errorText = await response.text();
     console.error('API response error:', response.status, errorText);
 
-    // Provide specific error messages
-    let errorMessage;
+    // Handle auth errors - clear credentials
     if (response.status === 401 || response.status === 403) {
-      errorMessage = 'API Key ungültig oder abgelaufen';
-    } else if (response.status === 400) {
-      errorMessage = 'Ungültige Anfrage';
-    } else if (response.status === 429) {
-      errorMessage = 'Zu viele Anfragen - bitte warten';
-    } else {
-      errorMessage = `API Fehler ${response.status}`;
+      await clearCredentials();
+      return {
+        success: false,
+        error: 'API Key ungültig oder abgelaufen',
+        authExpired: true
+      };
     }
 
-    return { success: false, error: errorMessage };
+    // Don't retry on client errors (4xx)
+    if (response.status >= 400 && response.status < 500) {
+      let errorMessage = 'Ungültige Anfrage';
+      if (response.status === 429) {
+        errorMessage = 'Zu viele Anfragen - bitte warten';
+      }
+      return { success: false, error: errorMessage };
+    }
+
+    // Retry on server errors (5xx) or network issues
+    if (retryCount < RETRY_CONFIG.maxRetries) {
+      const delay = RETRY_CONFIG.delayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, retryCount);
+      await sleep(delay);
+      return saveToFabric(videoInfo, apiKey, retryCount + 1);
+    }
+
+    return { success: false, error: `API Fehler ${response.status} nach ${retryCount + 1} Versuchen` };
   } catch (error) {
     console.error('API error:', error);
-    return { success: false, error: error.message };
+
+    // Retry on network errors
+    if (retryCount < RETRY_CONFIG.maxRetries) {
+      const delay = RETRY_CONFIG.delayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, retryCount);
+      await sleep(delay);
+      return saveToFabric(videoInfo, apiKey, retryCount + 1);
+    }
+
+    return { success: false, error: `Netzwerkfehler nach ${retryCount + 1} Versuchen` };
   }
 }
 
@@ -250,7 +295,70 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
+
+  if (request.action === 'savePlaylistToFabric') {
+    savePlaylistToFabric(request.videos, request.apiKey, sender.tab?.id)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'openInFabric') {
+    chrome.tabs.create({ url: request.url });
+    sendResponse({ success: true });
+    return true;
+  }
 });
+
+// Save multiple videos from a playlist
+async function savePlaylistToFabric(videos, apiKey, tabId) {
+  const results = {
+    total: videos.length,
+    saved: 0,
+    failed: 0,
+    errors: []
+  };
+
+  for (let i = 0; i < videos.length; i++) {
+    const video = videos[i];
+
+    // Update progress notification
+    await showNotification(
+      'Playlist speichern...',
+      `Video ${i + 1} von ${videos.length}: ${video.title || 'Unbekannt'}`
+    );
+
+    const result = await saveToFabric(video, apiKey);
+
+    if (result.success) {
+      results.saved++;
+    } else {
+      results.failed++;
+      results.errors.push({ video: video.title, error: result.error });
+
+      // Stop on auth error
+      if (result.authExpired) {
+        return {
+          success: false,
+          error: 'API Key abgelaufen',
+          authExpired: true,
+          results
+        };
+      }
+    }
+
+    // Small delay between saves to avoid rate limiting
+    if (i < videos.length - 1) {
+      await sleep(500);
+    }
+  }
+
+  return {
+    success: results.failed === 0,
+    results,
+    message: `${results.saved} von ${results.total} Videos gespeichert`
+  };
+}
 
 // Validate API key by testing against user endpoint
 async function validateApiKey(apiKey) {

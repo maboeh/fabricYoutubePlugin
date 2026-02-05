@@ -116,11 +116,75 @@
     return info;
   }
 
+  // Check if current page is a playlist
+  function isPlaylistPage() {
+    return window.location.pathname === '/playlist' ||
+           window.location.search.includes('list=');
+  }
+
+  // Get playlist information
+  function getPlaylistInfo() {
+    const info = {
+      isPlaylist: isPlaylistPage(),
+      playlistId: null,
+      playlistTitle: null,
+      videos: []
+    };
+
+    if (!info.isPlaylist) return info;
+
+    try {
+      // Get playlist ID
+      const urlParams = new URLSearchParams(window.location.search);
+      info.playlistId = urlParams.get('list');
+
+      // Get playlist title
+      const titleElement = document.querySelector('h1#title a.yt-simple-endpoint') ||
+                           document.querySelector('yt-formatted-string.ytd-playlist-header-renderer') ||
+                           document.querySelector('h1.ytd-playlist-header-renderer');
+      if (titleElement) {
+        info.playlistTitle = titleElement.textContent?.trim();
+      }
+
+      // Get all video links in the playlist
+      const videoElements = document.querySelectorAll('ytd-playlist-video-renderer');
+      videoElements.forEach((element, index) => {
+        const linkElement = element.querySelector('a#video-title');
+        const channelElement = element.querySelector('ytd-channel-name a') ||
+                               element.querySelector('.ytd-channel-name');
+
+        if (linkElement) {
+          const href = linkElement.href;
+          const videoIdMatch = href.match(/[?&]v=([^&]+)/);
+
+          info.videos.push({
+            url: href.split('&list=')[0], // Clean URL without playlist param
+            title: linkElement.textContent?.trim() || `Video ${index + 1}`,
+            videoId: videoIdMatch ? videoIdMatch[1] : null,
+            channel: channelElement?.textContent?.trim() || 'YouTube',
+            thumbnail: videoIdMatch ? `https://img.youtube.com/vi/${videoIdMatch[1]}/mqdefault.jpg` : null
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Error extracting playlist info:', error);
+    }
+
+    return info;
+  }
+
   // Listen for messages from popup or background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getVideoInfo') {
       const videoInfo = getVideoInfo();
       sendResponse({ videoInfo: videoInfo });
+    }
+    if (request.action === 'getPlaylistInfo') {
+      const playlistInfo = getPlaylistInfo();
+      sendResponse({ playlistInfo: playlistInfo });
+    }
+    if (request.action === 'isPlaylist') {
+      sendResponse({ isPlaylist: isPlaylistPage() });
     }
     return true;
   });

@@ -32,7 +32,8 @@ export const AUTH_TYPES = {
 export const YOUTUBE_PATTERNS = {
   WATCH: 'youtube.com/watch',
   SHORT_URL: 'youtu.be/',
-  SHORTS: 'youtube.com/shorts/'
+  SHORTS: 'youtube.com/shorts/',
+  PLAYLIST: 'youtube.com/playlist'
 };
 
 // Check if URL is a YouTube video
@@ -43,6 +44,32 @@ export function isYouTubeVideoUrl(url) {
     url.includes(YOUTUBE_PATTERNS.SHORT_URL) ||
     url.includes(YOUTUBE_PATTERNS.SHORTS)
   );
+}
+
+// Check if URL is a YouTube playlist
+export function isYouTubePlaylistUrl(url) {
+  if (!url) return false;
+  return url.includes(YOUTUBE_PATTERNS.PLAYLIST);
+}
+
+// Extract playlist ID from YouTube URL
+export function extractPlaylistId(url) {
+  if (!url) return null;
+  const match = url.match(/[?&]list=([^&]+)/);
+  return match ? match[1] : null;
+}
+
+// Storage helper functions (Promise-based)
+export async function getStorage(keys) {
+  return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+}
+
+export async function setStorage(obj) {
+  return new Promise(resolve => chrome.storage.local.set(obj, resolve));
+}
+
+export async function removeStorage(keys) {
+  return new Promise(resolve => chrome.storage.local.remove(keys, resolve));
 }
 
 // Extract video ID from YouTube URL
