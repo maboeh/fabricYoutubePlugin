@@ -234,9 +234,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleSaveShortcut()
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true; // Keep message channel open for async response
+    return true;
+  }
+
+  if (request.action === 'validateApiKey') {
+    validateApiKey(request.apiKey)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ valid: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'saveVideoToFabric') {
+    saveToFabric(request.videoInfo, request.apiKey)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
   }
 });
+
+// Validate API key by testing against user endpoint
+async function validateApiKey(apiKey) {
+  const config = await getStoredConfig();
+  const url = `${config.apiUrl}/v2/user/me`;
+  console.log('Validating API key against:', url);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'X-Api-Key': apiKey }
+    });
+
+    console.log('Validation response status:', response.status);
+
+    if (response.ok) {
+      return { valid: true };
+    } else if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: `Ungültiger API Key (${response.status})` };
+    } else if (response.status === 500) {
+      // Server error - save key anyway
+      console.warn('Server returned 500 - allowing key anyway');
+      return { valid: true, warning: 'Server-Fehler bei Validierung' };
+    } else {
+      return { valid: false, error: `API Fehler: ${response.status}` };
+    }
+  } catch (error) {
+    console.error('Validation error:', error);
+    return { valid: false, error: 'Verbindung fehlgeschlagen' };
+  }
+}
 
 // Context menu for right-click on YouTube pages
 chrome.runtime.onInstalled.addListener(() => {

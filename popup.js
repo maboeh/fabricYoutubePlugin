@@ -170,47 +170,20 @@ function setupEventListeners() {
   });
 }
 
-// Validate API key by testing against user endpoint
+// Validate API key via background script (avoids CORS issues)
 async function validateApiKey(apiKey) {
-  const url = `${config.apiUrl}/v2/user/me`;
-  console.log('Validating API key against:', url);
+  console.log('Validating API key via background script...');
   console.log('API key prefix:', apiKey.substring(0, 5) + '...');
 
-  try {
-    // Only X-Api-Key header for GET request (no Content-Type needed)
-    const headers = {
-      'X-Api-Key': apiKey
-    };
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: headers
-    });
-
-    console.log('Validation response status:', response.status);
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log('Validation success:', data);
-      return { valid: true };
-    } else {
-      const errorText = await response.text();
-      console.error('Validation failed:', response.status, errorText);
-
-      if (response.status === 401 || response.status === 403) {
-        return { valid: false, error: `Ungültiger API Key (${response.status})` };
-      } else if (response.status === 500) {
-        // Server error - might be a bug on Fabric's side, allow saving anyway
-        console.warn('Server returned 500 - saving key anyway (server might have issues)');
-        return { valid: true, warning: 'Server-Fehler bei Validierung, Key trotzdem gespeichert' };
-      } else {
-        return { valid: false, error: `API Fehler: ${response.status}` };
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { action: 'validateApiKey', apiKey: apiKey },
+      (response) => {
+        console.log('Validation response:', response);
+        resolve(response || { valid: false, error: 'Keine Antwort vom Background Script' });
       }
-    }
-  } catch (error) {
-    console.error('Validation error:', error);
-    return { valid: false, error: 'Verbindung fehlgeschlagen: ' + error.message };
-  }
+    );
+  });
 }
 
 // Handle saving credentials
@@ -283,80 +256,19 @@ async function handleSaveToFabric() {
   }
 }
 
-// Save to Fabric API (v2)
+// Save to Fabric via background script (avoids CORS issues)
 async function saveToFabric(videoInfo, apiKey) {
-  const headers = {
-    'Content-Type': 'application/json'
-  };
+  console.log('Saving to Fabric via background script...');
 
-  let credentials = 'omit';
-
-  // Fabric API uses X-Api-Key header
-  if (config.authType === 'apikey') {
-    headers['X-Api-Key'] = apiKey;
-  } else if (config.authType === 'oauth2') {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  } else if (config.authType === 'cookie') {
-    credentials = 'include';
-  }
-
-  // Build request body according to Fabric API v2 spec
-  const requestBody = {
-    url: videoInfo.url,
-    parentId: config.defaultParentId || '@alias::inbox',
-    name: videoInfo.title || null,
-    tags: [{ name: 'YouTube' }]
-  };
-
-  // Add comment with video details
-  if (videoInfo.channel) {
-    requestBody.comment = {
-      content: `Channel: ${videoInfo.channel}`
-    };
-  }
-
-  try {
-    const apiUrl = `${config.apiUrl}${config.endpoint}`;
-    console.log('Sending request to:', apiUrl);
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: headers,
-      credentials: credentials,
-      body: JSON.stringify(requestBody)
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return { success: true, data };
-    }
-
-    const errorText = await response.text();
-    console.error('API response error:', response.status, errorText);
-
-    // Provide specific error messages
-    let errorMessage;
-    if (response.status === 401 || response.status === 403) {
-      errorMessage = 'API Key ungültig oder abgelaufen';
-    } else if (response.status === 400) {
-      errorMessage = 'Ungültige Anfrage';
-    } else if (response.status === 429) {
-      errorMessage = 'Zu viele Anfragen - bitte warten';
-    } else {
-      // Try to parse error message from response
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.message || `API Fehler ${response.status}`;
-      } catch (e) {
-        errorMessage = `API Fehler ${response.status}`;
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { action: 'saveVideoToFabric', videoInfo: videoInfo, apiKey: apiKey },
+      (response) => {
+        console.log('Save response:', response);
+        resolve(response || { success: false, error: 'Keine Antwort vom Background Script' });
       }
-    }
-
-    return { success: false, error: errorMessage };
-  } catch (error) {
-    console.error('API error:', error);
-    return { success: false, error: error.message };
-  }
+    );
+  });
 }
 
 // UI State functions
