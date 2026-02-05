@@ -1,4 +1,10 @@
 // Background Service Worker for YouTube to Fabric Extension
+import {
+  STORAGE_KEYS,
+  DEFAULT_CONFIG,
+  isYouTubeVideoUrl,
+  extractVideoId
+} from './shared/constants.js';
 
 // Listen for keyboard shortcut
 chrome.commands.onCommand.addListener(async (command) => {
@@ -14,13 +20,13 @@ async function handleSaveShortcut() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.url) {
-      showNotification('Fehler', 'Kein aktiver Tab gefunden');
+      await showNotification('Fehler', 'Kein aktiver Tab gefunden');
       return;
     }
 
     // Check if it's a YouTube video
     if (!isYouTubeVideoUrl(tab.url)) {
-      showNotification('Kein YouTube Video', 'Bitte öffne ein YouTube Video');
+      await showNotification('Kein YouTube Video', 'Bitte öffne ein YouTube Video');
       return;
     }
 
@@ -28,7 +34,7 @@ async function handleSaveShortcut() {
     const credentials = await getStoredCredentials();
 
     if (!credentials || !credentials.apiKey) {
-      showNotification('Nicht angemeldet', 'Bitte öffne das Plugin und melde dich an');
+      await showNotification('Nicht angemeldet', 'Bitte öffne das Plugin und melde dich an');
       return;
     }
 
@@ -48,99 +54,161 @@ async function handleSaveShortcut() {
     }
 
     // Show saving notification
-    showNotification('Speichern...', 'Video wird in Fabric gespeichert');
+    await showNotification('Speichern...', 'Video wird in Fabric gespeichert');
 
     // Save to Fabric
     const result = await saveToFabric(videoInfo, credentials.apiKey);
 
     if (result.success) {
-      showNotification('Gespeichert!', `"${videoInfo.title}" wurde in Fabric gespeichert`);
+      await showNotification('Gespeichert!', `"${videoInfo.title}" wurde in Fabric gespeichert`);
     } else {
       // Fallback: Copy URL and open Fabric
-      await navigator.clipboard.writeText(videoInfo.url);
-      chrome.tabs.create({ url: 'https://fabric.so/home' });
-      showNotification('URL kopiert', 'Füge die URL in Fabric ein (Ctrl+V)');
+      const copied = await copyToClipboard(videoInfo.url, tab.id);
+      chrome.tabs.create({ url: `${DEFAULT_CONFIG.baseUrl}/home` });
+      if (copied) {
+        await showNotification('URL kopiert', 'Füge die URL in Fabric ein (Ctrl+V)');
+      } else {
+        await showNotification('Fabric geöffnet', 'Kopiere die URL manuell');
+      }
     }
   } catch (error) {
     console.error('Error in shortcut handler:', error);
-    showNotification('Fehler', 'Ein Fehler ist aufgetreten');
+    await showNotification('Fehler', 'Ein Fehler ist aufgetreten');
   }
-}
-
-// Check if URL is a YouTube video
-function isYouTubeVideoUrl(url) {
-  return url && (
-    url.includes('youtube.com/watch') ||
-    url.includes('youtu.be/') ||
-    url.includes('youtube.com/shorts/')
-  );
-}
-
-// Extract video ID from YouTube URL
-function extractVideoId(url) {
-  const patterns = [
-    /[?&]v=([^&]+)/,
-    /youtu\.be\/([^?&]+)/,
-    /shorts\/([^?&]+)/
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match) return match[1];
-  }
-  return null;
 }
 
 // Get stored credentials
 async function getStoredCredentials() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['fabricApiKey'], (result) => {
+    chrome.storage.local.get([STORAGE_KEYS.API_KEY], (result) => {
       resolve({
-        apiKey: result.fabricApiKey
+        apiKey: result[STORAGE_KEYS.API_KEY]
       });
     });
   });
 }
 
-// Save to Fabric API
+// Get stored settings
+async function getStoredSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([
+      STORAGE_KEYS.SHOW_NOTIFICATIONS,
+      STORAGE_KEYS.AUTO_COPY_URL
+    ], (result) => {
+      resolve({
+        showNotifications: result[STORAGE_KEYS.SHOW_NOTIFICATIONS] !== false,
+        autoCopyUrl: result[STORAGE_KEYS.AUTO_COPY_URL] === true
+      });
+    });
+  });
+}
+
+// Get stored API config
+async function getStoredConfig() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([
+      STORAGE_KEYS.API_BASE_URL,
+      STORAGE_KEYS.API_ENDPOINT,
+      STORAGE_KEYS.AUTH_TYPE
+    ], (result) => {
+      resolve({
+        apiUrl: result[STORAGE_KEYS.API_BASE_URL] || DEFAULT_CONFIG.apiUrl,
+        endpoint: result[STORAGE_KEYS.API_ENDPOINT] || DEFAULT_CONFIG.endpoint,
+        authType: result[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType
+      });
+    });
+  });
+}
+
+// Copy text to clipboard via content script (Service Worker can't use navigator.clipboard)
+async function copyToClipboard(text, tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: async (textToCopy) => {
+        try {
+          await navigator.clipboard.writeText(textToCopy);
+          return { success: true };
+        } catch (e) {
+          console.error('Clipboard write failed:', e);
+          return { success: false, error: e.message };
+        }
+      },
+      args: [text]
+    });
+
+    // Check if the script execution returned success
+    if (results && results[0] && results[0].result && results[0].result.success) {
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Failed to copy to clipboard:', error);
+    return false;
+  }
+}
+
+// Save to Fabric API (v2)
 async function saveToFabric(videoInfo, apiKey) {
-  const FABRIC_API_URL = 'https://api.fabric.so';
+  const config = await getStoredConfig();
 
   try {
-    const response = await fetch(`${FABRIC_API_URL}/api/v1/links`, {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    // Set auth headers based on auth type
+    // Fabric API uses X-Api-Key (not X-API-Key or Authorization Bearer)
+    if (config.authType === 'apikey') {
+      headers['X-Api-Key'] = apiKey;
+    } else if (config.authType === 'oauth2') {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    // Build request body according to Fabric API v2 spec
+    const requestBody = {
+      url: videoInfo.url,
+      parentId: DEFAULT_CONFIG.defaultParentId,  // @alias::inbox
+      name: videoInfo.title || null,
+      tags: [{ name: 'YouTube' }]
+    };
+
+    // Add comment with video details
+    if (videoInfo.channel) {
+      requestBody.comment = {
+        content: `Channel: ${videoInfo.channel}`
+      };
+    }
+
+    const response = await fetch(`${config.apiUrl}${config.endpoint}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'X-API-Key': apiKey
-      },
-      body: JSON.stringify({
-        url: videoInfo.url,
-        title: videoInfo.title,
-        description: `YouTube Video: ${videoInfo.title}`,
-        type: 'link',
-        metadata: {
-          source: 'youtube',
-          videoId: videoInfo.videoId,
-          channel: videoInfo.channel
-        }
-      })
+      headers: headers,
+      credentials: config.authType === 'cookie' ? 'include' : 'omit',
+      body: JSON.stringify(requestBody)
     });
 
     if (response.ok) {
-      return { success: true };
+      const data = await response.json();
+      return { success: true, data };
     }
 
-    return { success: false, error: 'API request failed' };
+    const errorText = await response.text();
+    console.error('API response error:', response.status, errorText);
+    return { success: false, error: `API request failed: ${response.status}` };
   } catch (error) {
     console.error('API error:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Show notification
-function showNotification(title, message) {
-  // Use chrome notifications API if available
+// Show notification (respects user settings)
+async function showNotification(title, message) {
+  const settings = await getStoredSettings();
+
+  if (!settings.showNotifications) {
+    return;
+  }
+
   if (chrome.notifications) {
     chrome.notifications.create({
       type: 'basic',
@@ -154,11 +222,9 @@ function showNotification(title, message) {
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'saveToFabric') {
-    handleSaveShortcut().then(() => {
-      sendResponse({ success: true });
-    }).catch((error) => {
-      sendResponse({ success: false, error: error.message });
-    });
+    handleSaveShortcut()
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true; // Keep message channel open for async response
   }
 });
@@ -181,11 +247,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'save-to-fabric') {
     const url = info.linkUrl || info.pageUrl;
 
+    if (!url) {
+      await showNotification('Fehler', 'Keine URL gefunden');
+      return;
+    }
+
     if (isYouTubeVideoUrl(url)) {
       const credentials = await getStoredCredentials();
 
       if (!credentials || !credentials.apiKey) {
-        showNotification('Nicht angemeldet', 'Bitte öffne das Plugin und melde dich an');
+        await showNotification('Nicht angemeldet', 'Bitte öffne das Plugin und melde dich an');
         return;
       }
 
@@ -199,12 +270,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const result = await saveToFabric(videoInfo, credentials.apiKey);
 
       if (result.success) {
-        showNotification('Gespeichert!', 'Video wurde in Fabric gespeichert');
+        await showNotification('Gespeichert!', 'Video wurde in Fabric gespeichert');
       } else {
-        showNotification('Fehler', 'Konnte nicht speichern. Öffne das Plugin für Details.');
+        await showNotification('Fehler', 'Konnte nicht speichern. Öffne das Plugin für Details.');
       }
     } else {
-      showNotification('Kein YouTube Video', 'Dieser Link ist kein YouTube Video');
+      await showNotification('Kein YouTube Video', 'Dieser Link ist kein YouTube Video');
     }
   }
 });

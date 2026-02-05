@@ -1,29 +1,33 @@
-// Fabric.so API Configuration (loaded from settings)
-let FABRIC_CONFIG = {
-  baseUrl: 'https://fabric.so',
-  apiUrl: 'https://api.fabric.so',
-  endpoint: '/v1/links',
-  authType: 'bearer'
-};
+// Popup script for YouTube to Fabric Extension
+import {
+  STORAGE_KEYS,
+  DEFAULT_CONFIG,
+  isYouTubeVideoUrl,
+  extractVideoId,
+  getThumbnailUrl
+} from './shared/constants.js';
+
+// Runtime config (can be overridden by user settings)
+let config = { ...DEFAULT_CONFIG };
 
 // Load configuration from storage
 async function loadConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'fabricApiBaseUrl',
-      'fabricApiEndpoint',
-      'fabricAuthType'
+      STORAGE_KEYS.API_BASE_URL,
+      STORAGE_KEYS.API_ENDPOINT,
+      STORAGE_KEYS.AUTH_TYPE
     ], (result) => {
-      if (result.fabricApiBaseUrl) {
-        FABRIC_CONFIG.apiUrl = result.fabricApiBaseUrl;
+      if (result[STORAGE_KEYS.API_BASE_URL]) {
+        config.apiUrl = result[STORAGE_KEYS.API_BASE_URL];
       }
-      if (result.fabricApiEndpoint) {
-        FABRIC_CONFIG.endpoint = result.fabricApiEndpoint;
+      if (result[STORAGE_KEYS.API_ENDPOINT]) {
+        config.endpoint = result[STORAGE_KEYS.API_ENDPOINT];
       }
-      if (result.fabricAuthType) {
-        FABRIC_CONFIG.authType = result.fabricAuthType;
+      if (result[STORAGE_KEYS.AUTH_TYPE]) {
+        config.authType = result[STORAGE_KEYS.AUTH_TYPE];
       }
-      resolve(FABRIC_CONFIG);
+      resolve(config);
     });
   });
 }
@@ -74,9 +78,9 @@ async function checkAuthStatus() {
 // Get stored credentials from Chrome storage
 async function getStoredCredentials() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['fabricApiKey'], (result) => {
+    chrome.storage.local.get([STORAGE_KEYS.API_KEY], (result) => {
       resolve({
-        apiKey: result.fabricApiKey
+        apiKey: result[STORAGE_KEYS.API_KEY]
       });
     });
   });
@@ -86,7 +90,7 @@ async function getStoredCredentials() {
 async function storeCredentials(apiKey) {
   return new Promise((resolve) => {
     chrome.storage.local.set({
-      fabricApiKey: apiKey
+      [STORAGE_KEYS.API_KEY]: apiKey
     }, resolve);
   });
 }
@@ -94,7 +98,7 @@ async function storeCredentials(apiKey) {
 // Clear credentials
 async function clearCredentials() {
   return new Promise((resolve) => {
-    chrome.storage.local.remove(['fabricApiKey'], resolve);
+    chrome.storage.local.remove([STORAGE_KEYS.API_KEY], resolve);
   });
 }
 
@@ -119,16 +123,14 @@ async function checkCurrentTab() {
       }
 
       // Fallback: Extract basic info from tab
+      const videoId = extractVideoId(tab.url);
       currentVideoInfo = {
         url: tab.url,
         title: tab.title?.replace(' - YouTube', '') || 'YouTube Video',
-        videoId: extractVideoId(tab.url),
-        channel: 'YouTube'
+        videoId: videoId,
+        channel: 'YouTube',
+        thumbnail: getThumbnailUrl(videoId)
       };
-
-      if (currentVideoInfo.videoId) {
-        currentVideoInfo.thumbnail = `https://img.youtube.com/vi/${currentVideoInfo.videoId}/mqdefault.jpg`;
-      }
 
       displayVideoInfo(currentVideoInfo);
       showVideoSection();
@@ -139,30 +141,6 @@ async function checkCurrentTab() {
     console.error('Error checking current tab:', error);
     showNoVideo();
   }
-}
-
-// Check if URL is a YouTube video
-function isYouTubeVideoUrl(url) {
-  return url && (
-    url.includes('youtube.com/watch') ||
-    url.includes('youtu.be/') ||
-    url.includes('youtube.com/shorts/')
-  );
-}
-
-// Extract video ID from YouTube URL
-function extractVideoId(url) {
-  const patterns = [
-    /[?&]v=([^&]+)/,           // youtube.com/watch?v=ID
-    /youtu\.be\/([^?&]+)/,      // youtu.be/ID
-    /shorts\/([^?&]+)/          // youtube.com/shorts/ID
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match) return match[1];
-  }
-  return null;
 }
 
 // Display video information
@@ -192,6 +170,31 @@ function setupEventListeners() {
   });
 }
 
+// Validate API key by testing against user endpoint
+async function validateApiKey(apiKey) {
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Api-Key': apiKey
+    };
+
+    const response = await fetch(`${config.apiUrl}/v2/user/me`, {
+      method: 'GET',
+      headers: headers
+    });
+
+    if (response.ok) {
+      return { valid: true };
+    } else if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Ungültiger API Key' };
+    } else {
+      return { valid: false, error: `API Fehler: ${response.status}` };
+    }
+  } catch (error) {
+    return { valid: false, error: 'Verbindung fehlgeschlagen' };
+  }
+}
+
 // Handle saving credentials
 async function handleSaveCredentials() {
   const apiKey = elements.apiKeyInput.value.trim();
@@ -201,11 +204,28 @@ async function handleSaveCredentials() {
     return;
   }
 
-  await storeCredentials(apiKey);
-  showLoggedIn();
+  // Disable button during validation
+  elements.saveCredentialsBtn.disabled = true;
+  elements.saveCredentialsBtn.textContent = 'Prüfe...';
 
-  // Re-check current tab after login
-  await checkCurrentTab();
+  try {
+    // Validate API key before storing
+    const validation = await validateApiKey(apiKey);
+
+    if (!validation.valid) {
+      showError(validation.error || 'API Key ungültig');
+      return;
+    }
+
+    await storeCredentials(apiKey);
+    showLoggedIn();
+
+    // Re-check current tab after login
+    await checkCurrentTab();
+  } finally {
+    elements.saveCredentialsBtn.disabled = false;
+    elements.saveCredentialsBtn.textContent = 'Anmelden';
+  }
 }
 
 // Handle logout
@@ -248,43 +268,40 @@ async function handleSaveToFabric() {
   }
 }
 
-// Save to Fabric API
+// Save to Fabric API (v2)
 async function saveToFabric(videoInfo, apiKey) {
-  // Build headers based on auth type from config
   const headers = {
     'Content-Type': 'application/json'
   };
 
   let credentials = 'omit';
 
-  switch (FABRIC_CONFIG.authType) {
-    case 'bearer':
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      break;
-    case 'apikey':
-      headers['X-API-Key'] = apiKey;
-      break;
-    case 'cookie':
-      credentials = 'include';
-      break;
+  // Fabric API uses X-Api-Key header
+  if (config.authType === 'apikey') {
+    headers['X-Api-Key'] = apiKey;
+  } else if (config.authType === 'oauth2') {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  } else if (config.authType === 'cookie') {
+    credentials = 'include';
   }
 
+  // Build request body according to Fabric API v2 spec
   const requestBody = {
     url: videoInfo.url,
-    title: videoInfo.title,
-    description: `YouTube Video: ${videoInfo.title}`,
-    type: 'link',
-    metadata: {
-      source: 'youtube',
-      videoId: videoInfo.videoId,
-      channel: videoInfo.channel,
-      thumbnail: videoInfo.thumbnail
-    }
+    parentId: config.defaultParentId || '@alias::inbox',
+    name: videoInfo.title || null,
+    tags: [{ name: 'YouTube' }]
   };
 
-  // Method 1: Try the configured API endpoint
+  // Add comment with video details
+  if (videoInfo.channel) {
+    requestBody.comment = {
+      content: `Channel: ${videoInfo.channel}`
+    };
+  }
+
   try {
-    const apiUrl = `${FABRIC_CONFIG.apiUrl}${FABRIC_CONFIG.endpoint}`;
+    const apiUrl = `${config.apiUrl}${config.endpoint}`;
     console.log('Sending request to:', apiUrl);
 
     const response = await fetch(apiUrl, {
@@ -295,55 +312,34 @@ async function saveToFabric(videoInfo, apiKey) {
     });
 
     if (response.ok) {
-      return { success: true };
+      const data = await response.json();
+      return { success: true, data };
     }
 
     const errorText = await response.text();
-    console.log('API response:', response.status, errorText);
+    console.error('API response error:', response.status, errorText);
 
-    // If API fails, try alternative method
-    throw new Error(`API request failed: ${response.status}`);
-  } catch (apiError) {
-    console.log('API method failed:', apiError.message);
-
-    // Method 2: Try using cookies (if user is logged in to fabric.so)
+    // Try to parse error message
+    let errorMessage = `API Fehler: ${response.status}`;
     try {
-      const cookies = await chrome.cookies.getAll({ domain: 'fabric.so' });
-
-      if (cookies.length > 0) {
-        // User has fabric.so cookies, try fetch with credentials
-        const response = await fetch(`${FABRIC_CONFIG.baseUrl}/api/links`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            url: videoInfo.url,
-            title: videoInfo.title
-          })
-        });
-
-        if (response.ok) {
-          return { success: true };
-        }
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.message) {
+        errorMessage = errorJson.message;
       }
-
-      throw new Error('Cookie method failed');
-    } catch (cookieError) {
-      console.log('Cookie method failed');
-      return {
-        success: false,
-        error: 'API nicht erreichbar. Öffne Einstellungen und prüfe die Konfiguration.'
-      };
+    } catch (e) {
+      // Keep default error message
     }
+
+    return { success: false, error: errorMessage };
+  } catch (error) {
+    console.error('API error:', error);
+    return { success: false, error: error.message };
   }
 }
 
 // Fallback: Open Fabric website with the URL
 function openFabricFallback(url) {
-  // Fabric supports pasting URLs directly, so we open Fabric and copy the URL
-  const fabricUrl = `${FABRIC_CONFIG.baseUrl}/home`;
+  const fabricUrl = `${config.baseUrl}/home`;
 
   // Copy URL to clipboard
   navigator.clipboard.writeText(url).then(() => {

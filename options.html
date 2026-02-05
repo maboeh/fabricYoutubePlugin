@@ -241,14 +241,14 @@
 
     <div class="content">
       <div class="info-box">
-        <h3>So findest du deinen API Token:</h3>
+        <h3>So findest du deinen API Key:</h3>
         <ol>
           <li>Öffne <a href="https://fabric.so" target="_blank">fabric.so</a> und logge dich ein</li>
-          <li>Öffne die Entwicklertools (F12 oder Rechtsklick > Untersuchen)</li>
-          <li>Gehe zum Tab "Network" (Netzwerk)</li>
-          <li>Führe eine Aktion aus (z.B. speichere einen Link)</li>
-          <li>Klicke auf eine API-Anfrage und suche in den Headers nach "Authorization" oder "Cookie"</li>
+          <li>Gehe zu <strong>Einstellungen</strong> in der Fabric App</li>
+          <li>Generiere einen neuen <strong>API Key</strong></li>
+          <li>Kopiere den Key und füge ihn unten ein</li>
         </ol>
+        <p style="margin-top: 8px;"><em>Wichtig: Teile deinen API Key niemals öffentlich!</em></p>
       </div>
 
       <div class="section">
@@ -256,14 +256,14 @@
 
         <div class="form-group">
           <label for="api-base-url">API Base URL:</label>
-          <input type="url" id="api-base-url" placeholder="https://api.fabric.so" value="https://api.fabric.so">
+          <input type="url" id="api-base-url" placeholder="https://api.fabric.so">
           <p class="help-text">Die Basis-URL der Fabric API</p>
         </div>
 
         <div class="form-group">
-          <label for="api-endpoint">Link/Note Endpoint:</label>
-          <input type="text" id="api-endpoint" placeholder="/v1/links" value="/v1/links">
-          <p class="help-text">Der API-Endpoint zum Erstellen von Links. Z.B. <code>/v1/links</code> oder <code>/api/notes</code></p>
+          <label for="api-endpoint">Bookmark Endpoint:</label>
+          <input type="text" id="api-endpoint" placeholder="/v2/bookmarks">
+          <p class="help-text">Der API-Endpoint zum Erstellen von Bookmarks. Standard: <code>/v2/bookmarks</code></p>
         </div>
 
         <div class="form-group">
@@ -275,8 +275,8 @@
         <div class="form-group">
           <label for="auth-type">Authentifizierung:</label>
           <select id="auth-type">
-            <option value="bearer">Bearer Token (Authorization: Bearer TOKEN)</option>
-            <option value="apikey">API Key (X-API-Key: TOKEN)</option>
+            <option value="apikey" selected>API Key (X-Api-Key Header) - Empfohlen</option>
+            <option value="oauth2">OAuth2 Bearer Token</option>
             <option value="cookie">Cookie-basiert (Session)</option>
           </select>
         </div>
@@ -317,6 +317,6 @@
     </div>
   </div>
 
-  <script src="options.js"></script>
+  <script type="module" src="options.js"></script>
 </body>
 </html>

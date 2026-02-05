@@ -1,4 +1,5 @@
 // Options page JavaScript
+import { STORAGE_KEYS, DEFAULT_CONFIG } from './shared/constants.js';
 
 const elements = {
   apiBaseUrl: document.getElementById('api-base-url'),
@@ -25,47 +26,37 @@ elements.testConnectionBtn.addEventListener('click', testConnection);
 async function loadSettings() {
   const settings = await new Promise((resolve) => {
     chrome.storage.local.get([
-      'fabricApiBaseUrl',
-      'fabricApiEndpoint',
-      'fabricApiKey',
-      'fabricAuthType',
-      'fabricShowFloatingButton',
-      'fabricShowNotifications',
-      'fabricAutoCopyUrl'
+      STORAGE_KEYS.API_BASE_URL,
+      STORAGE_KEYS.API_ENDPOINT,
+      STORAGE_KEYS.API_KEY,
+      STORAGE_KEYS.AUTH_TYPE,
+      STORAGE_KEYS.SHOW_FLOATING_BUTTON,
+      STORAGE_KEYS.SHOW_NOTIFICATIONS,
+      STORAGE_KEYS.AUTO_COPY_URL
     ], resolve);
   });
 
-  if (settings.fabricApiBaseUrl) {
-    elements.apiBaseUrl.value = settings.fabricApiBaseUrl;
-  }
+  // Apply settings with defaults
+  elements.apiBaseUrl.value = settings[STORAGE_KEYS.API_BASE_URL] || DEFAULT_CONFIG.apiUrl;
+  elements.apiEndpoint.value = settings[STORAGE_KEYS.API_ENDPOINT] || DEFAULT_CONFIG.endpoint;
+  elements.apiKey.value = settings[STORAGE_KEYS.API_KEY] || '';
+  elements.authType.value = settings[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType;
 
-  if (settings.fabricApiEndpoint) {
-    elements.apiEndpoint.value = settings.fabricApiEndpoint;
-  }
-
-  if (settings.fabricApiKey) {
-    elements.apiKey.value = settings.fabricApiKey;
-  }
-
-  if (settings.fabricAuthType) {
-    elements.authType.value = settings.fabricAuthType;
-  }
-
-  elements.showFloatingButton.checked = settings.fabricShowFloatingButton !== false;
-  elements.showNotifications.checked = settings.fabricShowNotifications !== false;
-  elements.autoCopyUrl.checked = settings.fabricAutoCopyUrl === true;
+  elements.showFloatingButton.checked = settings[STORAGE_KEYS.SHOW_FLOATING_BUTTON] !== false;
+  elements.showNotifications.checked = settings[STORAGE_KEYS.SHOW_NOTIFICATIONS] !== false;
+  elements.autoCopyUrl.checked = settings[STORAGE_KEYS.AUTO_COPY_URL] === true;
 }
 
 // Save settings to storage
 async function saveSettings() {
   const settings = {
-    fabricApiBaseUrl: elements.apiBaseUrl.value.trim(),
-    fabricApiEndpoint: elements.apiEndpoint.value.trim(),
-    fabricApiKey: elements.apiKey.value.trim(),
-    fabricAuthType: elements.authType.value,
-    fabricShowFloatingButton: elements.showFloatingButton.checked,
-    fabricShowNotifications: elements.showNotifications.checked,
-    fabricAutoCopyUrl: elements.autoCopyUrl.checked
+    [STORAGE_KEYS.API_BASE_URL]: elements.apiBaseUrl.value.trim(),
+    [STORAGE_KEYS.API_ENDPOINT]: elements.apiEndpoint.value.trim(),
+    [STORAGE_KEYS.API_KEY]: elements.apiKey.value.trim(),
+    [STORAGE_KEYS.AUTH_TYPE]: elements.authType.value,
+    [STORAGE_KEYS.SHOW_FLOATING_BUTTON]: elements.showFloatingButton.checked,
+    [STORAGE_KEYS.SHOW_NOTIFICATIONS]: elements.showNotifications.checked,
+    [STORAGE_KEYS.AUTO_COPY_URL]: elements.autoCopyUrl.checked
   };
 
   try {
@@ -87,7 +78,7 @@ async function testConnection() {
   const authType = elements.authType.value;
 
   if (!apiKey) {
-    showMessage('error', 'Bitte gib einen API Token ein');
+    showMessage('error', 'Bitte gib einen API Key ein');
     return;
   }
 
@@ -100,33 +91,27 @@ async function testConnection() {
       'Content-Type': 'application/json'
     };
 
-    switch (authType) {
-      case 'bearer':
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        break;
-      case 'apikey':
-        headers['X-API-Key'] = apiKey;
-        break;
-      case 'cookie':
-        // Cookie-based auth will use credentials: 'include'
-        break;
+    // Fabric API uses X-Api-Key (with correct capitalization)
+    if (authType === 'apikey') {
+      headers['X-Api-Key'] = apiKey;
+    } else if (authType === 'oauth2') {
+      headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    // Try a simple test request
-    const testUrl = `${baseUrl}${endpoint}`;
+    // Test with a GET request to user endpoint
+    const testUrl = `${baseUrl}/v2/user/me`;
 
-    // Send a test request (OPTIONS or HEAD to check if endpoint exists)
     const response = await fetch(testUrl, {
-      method: 'OPTIONS',
+      method: 'GET',
       headers: headers,
       credentials: authType === 'cookie' ? 'include' : 'omit'
     });
 
-    if (response.ok || response.status === 204 || response.status === 405) {
-      // 405 = Method Not Allowed, but endpoint exists
-      showMessage('success', 'Verbindung erfolgreich! API ist erreichbar.');
+    if (response.ok) {
+      const userData = await response.json();
+      showMessage('success', `Verbindung erfolgreich! Eingeloggt als: ${userData.email || userData.name || 'Benutzer'}`);
     } else if (response.status === 401 || response.status === 403) {
-      showMessage('error', 'Authentifizierung fehlgeschlagen. Bitte Token prüfen.');
+      showMessage('error', 'Authentifizierung fehlgeschlagen. Bitte API Key prüfen.');
     } else {
       showMessage('error', `API antwortet mit Status ${response.status}`);
     }
