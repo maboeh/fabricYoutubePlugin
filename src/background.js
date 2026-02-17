@@ -324,7 +324,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'openInFabric') {
     const url = request.url;
-    if (url && (url.startsWith('https://fabric.so/') || url.startsWith('https://app.fabric.so/'))) {
+    const isFabricUrl = url && (
+      url === 'https://fabric.so' || url.startsWith('https://fabric.so/') ||
+      url === 'https://app.fabric.so' || url.startsWith('https://app.fabric.so/')
+    );
+    if (isFabricUrl) {
       chrome.tabs.create({ url });
       sendResponse({ success: true });
     } else {
