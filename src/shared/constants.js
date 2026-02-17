@@ -115,7 +115,7 @@ export function getThumbnailUrl(videoId, quality = 'mqdefault') {
 // Sanitize text for API submission: strip control characters, trim
 export function sanitizeText(text, maxLength = 0) {
   if (!text) return text;
-  let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
   clean = clean.trim();
   if (maxLength > 0 && clean.length > maxLength) {
     clean = clean.substring(0, maxLength);

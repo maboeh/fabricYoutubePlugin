@@ -262,13 +262,13 @@ async function handleSaveCredentials() {
       return;
     }
 
-    // Show warning if API had issues but key was accepted
-    if (validation.warning) {
-      showError(validation.warning);
-    }
-
     await storeCredentials(apiKey);
     showLoggedIn();
+
+    // Show warning after login transition so it's visible in the logged-in state
+    if (validation.warning) {
+      showSuccess(validation.warning);
+    }
 
     // Re-check current tab after login
     await checkCurrentTab();

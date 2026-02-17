@@ -309,6 +309,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'saveVideoToFabric') {
+    if (!isYouTubeVideoUrl(request.videoInfo?.url)) {
+      sendResponse({ success: false, error: 'Keine gültige YouTube URL' });
+      return true;
+    }
     saveToFabric(request.videoInfo, request.apiKey)
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ success: false, error: error.message }));
@@ -395,9 +399,16 @@ async function validateApiKey(apiKey) {
   const url = `${config.apiUrl}/v2/user/me`;
 
   try {
+    const headers = {};
+    if (config.authType === 'oauth2') {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+      headers['X-Api-Key'] = apiKey;
+    }
+
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'X-Api-Key': apiKey }
+      headers
     });
 
     if (response.ok) {
