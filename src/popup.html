@@ -87,19 +87,21 @@
     </div>
 
     <!-- Success Message -->
-    <div id="success-message" class="message success hidden">
+    <div id="success-message" class="message success hidden" role="status" aria-live="polite">
       <span class="message-icon">&#10003;</span>
       <span>Video erfolgreich in Fabric gespeichert!</span>
+      <button class="dismiss-btn" aria-label="Schließen">&times;</button>
     </div>
 
     <!-- Error Message -->
-    <div id="error-message" class="message error hidden">
+    <div id="error-message" class="message error hidden" role="alert" aria-live="assertive">
       <span class="message-icon">&#10007;</span>
       <span id="error-text">Ein Fehler ist aufgetreten</span>
+      <button class="dismiss-btn" aria-label="Schließen">&times;</button>
     </div>
 
     <!-- Loading -->
-    <div id="loading" class="loading hidden">
+    <div id="loading" class="loading hidden" role="status" aria-live="polite">
       <div class="spinner"></div>
       <span>Wird gespeichert...</span>
     </div>

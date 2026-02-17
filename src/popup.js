@@ -202,6 +202,7 @@ function displayVideoInfo(info) {
 
   if (info.thumbnail) {
     elements.videoThumbnail.src = info.thumbnail;
+    elements.videoThumbnail.alt = info.title ? `Thumbnail: ${info.title}` : 'Video Thumbnail';
     elements.videoThumbnail.style.display = 'block';
   } else {
     elements.videoThumbnail.style.display = 'none';
@@ -228,6 +229,20 @@ function setupEventListeners() {
   elements.apiKeyInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleSaveCredentials();
+    }
+  });
+
+  // Dismiss buttons on messages
+  document.querySelectorAll('.dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.message').classList.add('hidden');
+    });
+  });
+
+  // Escape key closes visible messages
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      hideMessages();
     }
   });
 }
@@ -306,6 +321,10 @@ async function handleSaveToFabric() {
   }
 
   showLoading(elements.saveToFabricBtn);
+  elements.saveToFabricBtn.querySelector('.btn-icon').textContent = '...';
+  // Replace text node after icon span
+  const btnTextNode = [...elements.saveToFabricBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+  if (btnTextNode) btnTextNode.textContent = ' Speichern...';
 
   // Attach custom tags and note from popup fields
   const videoInfoWithExtras = { ...currentVideoInfo };
@@ -464,11 +483,18 @@ function showNoVideo() {
 
 // Button tracking for loading state
 let _loadingTriggerBtn = null;
+let _loadingOrigIcon = null;
+let _loadingOrigText = null;
 
 function showLoading(triggerBtn = null) {
   _loadingTriggerBtn = triggerBtn;
   if (triggerBtn) {
     triggerBtn.disabled = true;
+    // Save original button content for restoration
+    const icon = triggerBtn.querySelector('.btn-icon');
+    const textNode = [...triggerBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    _loadingOrigIcon = icon ? icon.textContent : null;
+    _loadingOrigText = textNode ? textNode.textContent : null;
   } else {
     // Fallback: disable all action buttons
     elements.saveToFabricBtn.disabled = true;
@@ -481,7 +507,18 @@ function showLoading(triggerBtn = null) {
 function hideLoading() {
   if (_loadingTriggerBtn) {
     _loadingTriggerBtn.disabled = false;
+    // Restore original button content
+    if (_loadingOrigIcon !== null) {
+      const icon = _loadingTriggerBtn.querySelector('.btn-icon');
+      if (icon) icon.textContent = _loadingOrigIcon;
+    }
+    if (_loadingOrigText !== null) {
+      const textNode = [..._loadingTriggerBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+      if (textNode) textNode.textContent = _loadingOrigText;
+    }
     _loadingTriggerBtn = null;
+    _loadingOrigIcon = null;
+    _loadingOrigText = null;
   } else {
     elements.saveToFabricBtn.disabled = false;
     if (elements.savePlaylistBtn) elements.savePlaylistBtn.disabled = false;
@@ -490,12 +527,12 @@ function hideLoading() {
 }
 
 function showSuccess(message = 'Video erfolgreich in Fabric gespeichert!') {
-  elements.successMessage.querySelector('span:last-child').textContent = message;
+  elements.successMessage.querySelector('span:nth-of-type(2)').textContent = message;
   elements.successMessage.classList.remove('hidden');
 
   setTimeout(() => {
     elements.successMessage.classList.add('hidden');
-  }, 5000);
+  }, 10000);
 }
 
 // Playlist progress helpers
@@ -530,7 +567,7 @@ function showError(message) {
 
   setTimeout(() => {
     elements.errorMessage.classList.add('hidden');
-  }, 5000);
+  }, 10000);
 }
 
 function hideMessages() {

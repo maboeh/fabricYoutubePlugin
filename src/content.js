@@ -207,6 +207,8 @@
     button.id = 'fabric-save-button';
     button.title = 'In Fabric speichern (Alt+Shift+F)';
 
+    button.setAttribute('aria-label', 'Video in Fabric speichern');
+
     // Create SVG icon using DOM methods (safe, no innerHTML with user content)
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('width', '20');
@@ -215,6 +217,7 @@
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
     svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('aria-hidden', 'true');
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z');
