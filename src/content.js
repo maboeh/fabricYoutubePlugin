@@ -2,7 +2,11 @@
 // Extracts video information from the YouTube page
 //
 // NOTE: Content Scripts cannot use ES6 modules.
-// Storage keys must match shared/constants.js STORAGE_KEYS:
+// This file uses chrome.* API directly. If a cross-browser polyfill
+// (shared/browser-api.js) is introduced, this file's API calls MUST
+// be updated to match. See also: shared/constants.js
+//
+// Storage keys used here MUST match shared/constants.js STORAGE_KEYS:
 //   - 'fabricShowFloatingButton' = STORAGE_KEYS.SHOW_FLOATING_BUTTON
 
 (function() {

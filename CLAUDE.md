@@ -101,14 +101,23 @@ X-Api-Key: <api-key>
 | `fabricApiBaseUrl` | API URL (default: https://api.fabric.so) |
 | `fabricApiEndpoint` | Endpoint (default: /v2/bookmarks) |
 | `fabricAuthType` | apikey \| oauth2 |
+| `fabricDefaultParentId` | Ziel-Ordner (default: @alias::inbox) |
 | `fabricShowFloatingButton` | Floating Button anzeigen |
 | `fabricShowNotifications` | Notifications anzeigen |
 | `fabricAutoCopyUrl` | URL automatisch kopieren |
 
 ## Hinweise
 
-- Content Scripts können keine ES6 Module importieren - `content.js` ist eigenständig
-- Service Worker hat keinen Zugriff auf `navigator.clipboard` - nutzt `chrome.scripting.executeScript`
-- YouTube ist eine SPA - MutationObserver für Navigation-Erkennung erforderlich
-- DNR-Regel (`rules.json`) entfernt den `Origin`-Header bei Requests an `api.fabric.so` — dies ist ein bewusster Workaround für CORS-Einschränkungen der Fabric API
+- Content Scripts können keine ES6 Module importieren — `content.js` ist eigenständig und nutzt `chrome.*` direkt. Bei Einführung eines Cross-Browser-Polyfills muss `content.js` manuell angepasst werden.
+- Service Worker hat keinen Zugriff auf `navigator.clipboard` — nutzt `chrome.scripting.executeScript`
+- YouTube ist eine SPA — MutationObserver für Navigation-Erkennung erforderlich
+- DNR-Regel (`rules.json`) entfernt den `Origin`-Header bei Requests an `api.fabric.so` — bewusster Workaround für CORS-Einschränkungen der Fabric API. Chrome nutzt `urlFilter` (performanter), Safari benötigt `regexFilter`.
 - API-Strings (Titel, Channel, Beschreibung) werden vor dem Versand über `sanitizeText()` bereinigt
+- `validateApiKey()` behandelt HTTP 500 als "gültig mit Warning" — die Fabric API gibt gelegentlich 500 bei gültigen Keys zurück
+
+## Known Limitations
+
+- **Keyboard Shortcut `Alt+Shift+F`**: Kann mit Browser- oder OS-Shortcuts kollidieren. In Chrome unter `chrome://extensions/shortcuts` änderbar, in Safari fest.
+- **Duplikat-Erkennung**: Nicht implementiert — Fabric API v2 bietet keinen "Search by URL"-Endpoint.
+- **Content Script `chrome.*` API**: Nutzt direkt `chrome.*` statt eines Polyfills. Bei Safari-Portierung muss dies auf `browser.*` angepasst werden (oder ein Inline-Polyfill eingebaut werden).
+- **Playlist-Scraping**: Nur aktuell geladene Videos werden erkannt. YouTube lädt Playlists lazy — User muss scrollen, um mehr Videos zu laden.
