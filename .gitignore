@@ -3,7 +3,11 @@ node_modules/
 
 # Build output
 dist/
-build/
+
+# Xcode derived data
+safari-app/**/DerivedData/
+safari-app/**/*.xcuserdata/
+safari-app/**/build/
 
 # IDE
 .idea/
@@ -23,3 +27,9 @@ Thumbs.db
 # Package manager files
 package-lock.json
 yarn.lock
+
+# Chrome metadata (auto-generated)
+_metadata/
+
+# Git worktrees
+.worktrees/
