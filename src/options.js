@@ -104,7 +104,7 @@ async function testConnection() {
     const response = await fetch(testUrl, {
       method: 'GET',
       headers: headers,
-      credentials: authType === 'cookie' ? 'include' : 'omit'
+      credentials: 'omit'
     });
 
     if (response.ok) {

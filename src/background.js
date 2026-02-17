@@ -5,7 +5,8 @@ import {
   isYouTubeVideoUrl,
   extractVideoId,
   getStorage,
-  removeStorage
+  removeStorage,
+  sanitizeText
 } from './shared/constants.js';
 
 // Retry configuration
@@ -173,25 +174,30 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
+    // Sanitize user-provided strings before sending to API
+    const title = sanitizeText(videoInfo.title, 500);
+    const channel = sanitizeText(videoInfo.channel, 200);
+    const description = sanitizeText(videoInfo.description, 2000);
+
     // Build rich tags
     const tags = [{ name: 'YouTube' }];
-    if (videoInfo.channel && videoInfo.channel !== 'YouTube') {
-      tags.push({ name: videoInfo.channel });
+    if (channel && channel !== 'YouTube') {
+      tags.push({ name: channel });
     }
 
     // Build request body with rich metadata
     const requestBody = {
       url: videoInfo.url,
       parentId: DEFAULT_CONFIG.defaultParentId,
-      name: videoInfo.title || null,
+      name: title || null,
       tags: tags
     };
 
     // Add detailed comment with video metadata
     const commentParts = [];
-    if (videoInfo.channel) commentParts.push(`Channel: ${videoInfo.channel}`);
+    if (channel) commentParts.push(`Channel: ${channel}`);
     if (videoInfo.duration) commentParts.push(`Dauer: ${videoInfo.duration}`);
-    if (videoInfo.description) commentParts.push(`\n${videoInfo.description}`);
+    if (description) commentParts.push(`\n${description}`);
 
     if (commentParts.length > 0) {
       requestBody.comment = {
@@ -202,7 +208,7 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
     const response = await fetch(`${config.apiUrl}${config.endpoint}`, {
       method: 'POST',
       headers: headers,
-      credentials: config.authType === 'cookie' ? 'include' : 'omit',
+      credentials: 'omit',
       body: JSON.stringify(requestBody)
     });
 
@@ -317,8 +323,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'openInFabric') {
-    chrome.tabs.create({ url: request.url });
-    sendResponse({ success: true });
+    const url = request.url;
+    if (url && (url.startsWith('https://fabric.so/') || url.startsWith('https://app.fabric.so/'))) {
+      chrome.tabs.create({ url });
+      sendResponse({ success: true });
+    } else {
+      console.warn('Blocked openInFabric with invalid URL:', url);
+      sendResponse({ success: false, error: 'Ungültige URL' });
+    }
     return true;
   }
 });
@@ -388,9 +400,9 @@ async function validateApiKey(apiKey) {
       return { valid: true };
     } else if (response.status === 401 || response.status === 403) {
       return { valid: false, error: `Ungültiger API Key (${response.status})` };
-    } else if (response.status === 500) {
-      // Server error - save key anyway (Fabric API bug)
-      return { valid: true, warning: 'Server-Fehler bei Validierung' };
+    } else if (response.status >= 500) {
+      // Server error - save key anyway (known Fabric API issue)
+      return { valid: true, warning: 'Fabric API antwortet mit Server-Fehler. Key wurde gespeichert - bei Problemen bitte erneut versuchen.' };
     } else {
       return { valid: false, error: `API Fehler: ${response.status}` };
     }

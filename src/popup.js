@@ -262,6 +262,11 @@ async function handleSaveCredentials() {
       return;
     }
 
+    // Show warning if API had issues but key was accepted
+    if (validation.warning) {
+      showError(validation.warning);
+    }
+
     await storeCredentials(apiKey);
     showLoggedIn();
 

@@ -6,7 +6,6 @@
   "permissions": [
     "activeTab",
     "storage",
-    "cookies",
     "contextMenus",
     "notifications",
     "scripting",
@@ -44,11 +43,15 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
       "js": ["content.js"],
-      "css": ["content.css"]
+      "css": ["content.css"],
+      "run_at": "document_idle"
     }
   ],
   "declarative_net_request": {

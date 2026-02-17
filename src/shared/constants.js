@@ -24,8 +24,7 @@ export const DEFAULT_CONFIG = {
 // API Auth types
 export const AUTH_TYPES = {
   API_KEY: 'apikey',   // X-Api-Key header
-  OAUTH2: 'oauth2',    // OAuth2 flow
-  COOKIE: 'cookie'     // Cookie-based (fallback)
+  OAUTH2: 'oauth2'     // OAuth2 flow
 };
 
 // YouTube URL patterns
@@ -111,4 +110,15 @@ export function extractVideoId(url) {
 export function getThumbnailUrl(videoId, quality = 'mqdefault') {
   if (!videoId) return null;
   return `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
+}
+
+// Sanitize text for API submission: strip control characters, trim
+export function sanitizeText(text, maxLength = 0) {
+  if (!text) return text;
+  let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  clean = clean.trim();
+  if (maxLength > 0 && clean.length > maxLength) {
+    clean = clean.substring(0, maxLength);
+  }
+  return clean;
 }

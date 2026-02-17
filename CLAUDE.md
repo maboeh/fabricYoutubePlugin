@@ -100,7 +100,7 @@ X-Api-Key: <api-key>
 | `fabricApiKey` | API Key |
 | `fabricApiBaseUrl` | API URL (default: https://api.fabric.so) |
 | `fabricApiEndpoint` | Endpoint (default: /v2/bookmarks) |
-| `fabricAuthType` | apikey \| oauth2 \| cookie |
+| `fabricAuthType` | apikey \| oauth2 |
 | `fabricShowFloatingButton` | Floating Button anzeigen |
 | `fabricShowNotifications` | Notifications anzeigen |
 | `fabricAutoCopyUrl` | URL automatisch kopieren |
@@ -110,3 +110,5 @@ X-Api-Key: <api-key>
 - Content Scripts können keine ES6 Module importieren - `content.js` ist eigenständig
 - Service Worker hat keinen Zugriff auf `navigator.clipboard` - nutzt `chrome.scripting.executeScript`
 - YouTube ist eine SPA - MutationObserver für Navigation-Erkennung erforderlich
+- DNR-Regel (`rules.json`) entfernt den `Origin`-Header bei Requests an `api.fabric.so` — dies ist ein bewusster Workaround für CORS-Einschränkungen der Fabric API
+- API-Strings (Titel, Channel, Beschreibung) werden vor dem Versand über `sanitizeText()` bereinigt

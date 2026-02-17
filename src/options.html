@@ -249,6 +249,7 @@
           <li>Kopiere den Key und füge ihn unten ein</li>
         </ol>
         <p style="margin-top: 8px;"><em>Wichtig: Teile deinen API Key niemals öffentlich!</em></p>
+        <p style="margin-top: 4px;"><em>Hinweis: Der API Key wird lokal im Browser-Speicher abgelegt und ist nur für diese Extension zugänglich.</em></p>
       </div>
 
       <div class="section">
@@ -267,9 +268,9 @@
         </div>
 
         <div class="form-group">
-          <label for="api-key">API Token / Session Token:</label>
-          <input type="password" id="api-key" placeholder="Dein API Token">
-          <p class="help-text">Der Authorization Token oder API Key für die Fabric API</p>
+          <label for="api-key">API Key:</label>
+          <input type="password" id="api-key" placeholder="Dein Fabric API Key">
+          <p class="help-text">Der API Key für die Fabric API (generierbar unter Fabric.so &gt; Einstellungen)</p>
         </div>
 
         <div class="form-group">
@@ -277,7 +278,6 @@
           <select id="auth-type">
             <option value="apikey" selected>API Key (X-Api-Key Header) - Empfohlen</option>
             <option value="oauth2">OAuth2 Bearer Token</option>
-            <option value="cookie">Cookie-basiert (Session)</option>
           </select>
         </div>
       </div>
