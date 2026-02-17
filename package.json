@@ -1,0 +1,12 @@
+{
+  "name": "youtube-to-fabric",
+  "version": "1.0.0",
+  "description": "Save YouTube videos as bookmarks to Fabric.so - Chrome & Safari Extension",
+  "private": true,
+  "scripts": {
+    "build:chrome": "bash scripts/build-chrome.sh",
+    "build:safari": "bash scripts/build-safari.sh",
+    "build": "npm run build:chrome && npm run build:safari",
+    "xcode": "open safari-app/*.xcodeproj"
+  }
+}
