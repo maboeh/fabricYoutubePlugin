@@ -93,7 +93,13 @@ async function testConnection() {
     const result = await new Promise((resolve) => {
       chrome.runtime.sendMessage(
         { action: 'validateApiKey', apiKey },
-        (response) => resolve(response || { valid: false, error: 'Keine Antwort' })
+        (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ valid: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
+            return;
+          }
+          resolve(response || { valid: false, error: 'Keine Antwort' });
+        }
       );
     });
 

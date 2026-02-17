@@ -100,6 +100,15 @@ let _settingsCache = null;
 let _settingsCacheTime = 0;
 const SETTINGS_CACHE_TTL = 30000; // 30 seconds
 
+// Invalidate settings cache when user changes settings
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local') {
+    if (changes[STORAGE_KEYS.SHOW_NOTIFICATIONS] || changes[STORAGE_KEYS.AUTO_COPY_URL]) {
+      _settingsCache = null;
+    }
+  }
+});
+
 async function getStoredSettings() {
   const now = Date.now();
   if (_settingsCache && (now - _settingsCacheTime) < SETTINGS_CACHE_TTL) {
@@ -271,7 +280,13 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0, config = null) {
       if (retryCount < RETRY_CONFIG.maxRetries) {
         // Check for Retry-After header, default to rateLimitDelayMs
         const retryAfter = response.headers.get('Retry-After');
-        const delay = retryAfter ? parseInt(retryAfter) * 1000 : RETRY_CONFIG.rateLimitDelayMs;
+        let delay = RETRY_CONFIG.rateLimitDelayMs;
+        if (retryAfter) {
+          const seconds = parseInt(retryAfter, 10);
+          if (!isNaN(seconds) && seconds > 0 && seconds <= 300) {
+            delay = seconds * 1000;
+          }
+        }
         await sleep(delay);
         return saveToFabric(videoInfo, apiKey, retryCount + 1, config);
       }
@@ -432,7 +447,8 @@ async function validateApiKey(apiKey) {
 
     const response = await fetch(url, {
       method: 'GET',
-      headers
+      headers,
+      credentials: 'omit'
     });
 
     if (response.ok) {
@@ -446,7 +462,8 @@ async function validateApiKey(apiKey) {
       return { valid: false, error: `API Fehler: ${response.status}` };
     }
   } catch (error) {
-    return { valid: false, error: 'Verbindung fehlgeschlagen' };
+    console.error('API key validation failed:', error);
+    return { valid: false, error: `Verbindung fehlgeschlagen: ${error.message}` };
   }
 }
 

@@ -253,6 +253,10 @@ async function validateApiKey(apiKey) {
     chrome.runtime.sendMessage(
       { action: 'validateApiKey', apiKey: apiKey },
       (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ valid: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
+          return;
+        }
         resolve(response || { valid: false, error: 'Keine Antwort vom Background Script' });
       }
     );
@@ -321,8 +325,8 @@ async function handleSaveToFabric() {
   }
 
   showLoading(elements.saveToFabricBtn);
-  elements.saveToFabricBtn.querySelector('.btn-icon').textContent = '...';
-  // Replace text node after icon span
+  const btnIcon = elements.saveToFabricBtn.querySelector('.btn-icon');
+  if (btnIcon) btnIcon.textContent = '...';
   const btnTextNode = [...elements.saveToFabricBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
   if (btnTextNode) btnTextNode.textContent = ' Speichern...';
 
@@ -406,6 +410,11 @@ async function handleSavePlaylist() {
 
       const result = await saveToFabric(video, credentials.apiKey);
 
+      // Delay between saves to avoid API rate limiting
+      if (i < videoCount - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
       if (result.success) {
         saved++;
         consecutiveFailures = 0;
@@ -454,6 +463,10 @@ async function saveToFabric(videoInfo, apiKey) {
     chrome.runtime.sendMessage(
       { action: 'saveVideoToFabric', videoInfo: videoInfo, apiKey: apiKey },
       (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
+          return;
+        }
         resolve(response || { success: false, error: 'Keine Antwort vom Background Script' });
       }
     );

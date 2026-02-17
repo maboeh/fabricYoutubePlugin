@@ -174,7 +174,7 @@
 
         if (linkElement) {
           const href = linkElement.href;
-          const videoIdMatch = href.match(/[?&]v=([^&]+)/);
+          const videoIdMatch = href.match(/[?&]v=([A-Za-z0-9_-]{11})/);
 
           info.videos.push({
             url: href.split('&list=')[0], // Clean URL without playlist param
