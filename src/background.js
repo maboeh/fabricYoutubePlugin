@@ -6,7 +6,8 @@ import {
   extractVideoId,
   getStorage,
   removeStorage,
-  sanitizeText
+  sanitizeText,
+  getStoredCredentials
 } from './shared/constants.js';
 
 // Retry configuration
@@ -94,22 +95,26 @@ async function handleSaveShortcut() {
   }
 }
 
-// Get stored credentials
-async function getStoredCredentials() {
-  const result = await getStorage([STORAGE_KEYS.API_KEY]);
-  return { apiKey: result[STORAGE_KEYS.API_KEY] };
-}
+// Settings cache (avoids repeated storage reads in showNotification, autoCopy etc.)
+let _settingsCache = null;
+let _settingsCacheTime = 0;
+const SETTINGS_CACHE_TTL = 30000; // 30 seconds
 
-// Get stored settings
 async function getStoredSettings() {
+  const now = Date.now();
+  if (_settingsCache && (now - _settingsCacheTime) < SETTINGS_CACHE_TTL) {
+    return _settingsCache;
+  }
   const result = await getStorage([
     STORAGE_KEYS.SHOW_NOTIFICATIONS,
     STORAGE_KEYS.AUTO_COPY_URL
   ]);
-  return {
+  _settingsCache = {
     showNotifications: result[STORAGE_KEYS.SHOW_NOTIFICATIONS] !== false,
     autoCopyUrl: result[STORAGE_KEYS.AUTO_COPY_URL] === true
   };
+  _settingsCacheTime = now;
+  return _settingsCache;
 }
 
 // Get stored API config
@@ -167,8 +172,8 @@ async function copyToClipboard(text, tabId) {
 }
 
 // Save to Fabric API (v2) with retry logic
-async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
-  const config = await getStoredConfig();
+async function saveToFabric(videoInfo, apiKey, retryCount = 0, config = null) {
+  if (!config) config = await getStoredConfig();
 
   try {
     const headers = {
@@ -268,7 +273,7 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
         const retryAfter = response.headers.get('Retry-After');
         const delay = retryAfter ? parseInt(retryAfter) * 1000 : RETRY_CONFIG.rateLimitDelayMs;
         await sleep(delay);
-        return saveToFabric(videoInfo, apiKey, retryCount + 1);
+        return saveToFabric(videoInfo, apiKey, retryCount + 1, config);
       }
       return { success: false, error: 'Zu viele Anfragen - bitte später erneut versuchen' };
     }
@@ -294,7 +299,7 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
     if (retryCount < RETRY_CONFIG.maxRetries) {
       const delay = RETRY_CONFIG.delayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, retryCount);
       await sleep(delay);
-      return saveToFabric(videoInfo, apiKey, retryCount + 1);
+      return saveToFabric(videoInfo, apiKey, retryCount + 1, config);
     }
 
     return { success: false, error: `API Fehler ${response.status} nach ${retryCount + 1} Versuchen` };
@@ -305,7 +310,7 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
     if (retryCount < RETRY_CONFIG.maxRetries) {
       const delay = RETRY_CONFIG.delayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, retryCount);
       await sleep(delay);
-      return saveToFabric(videoInfo, apiKey, retryCount + 1);
+      return saveToFabric(videoInfo, apiKey, retryCount + 1, config);
     }
 
     return { success: false, error: `Netzwerkfehler nach ${retryCount + 1} Versuchen` };

@@ -90,14 +90,25 @@ export async function removeStorage(keys) {
   });
 }
 
-// Extract video ID from YouTube URL
+// Get stored credentials (shared by background.js and popup.js)
+export async function getStoredCredentials() {
+  try {
+    const result = await getStorage([STORAGE_KEYS.API_KEY]);
+    return { apiKey: result[STORAGE_KEYS.API_KEY] };
+  } catch (error) {
+    console.error('Error getting credentials:', error);
+    return { apiKey: null };
+  }
+}
+
+// Extract video ID from YouTube URL (11-char alphanumeric + dash/underscore)
 export function extractVideoId(url) {
   if (!url) return null;
 
   const patterns = [
-    /[?&]v=([^&]+)/,           // youtube.com/watch?v=ID
-    /youtu\.be\/([^?&]+)/,      // youtu.be/ID
-    /shorts\/([^?&]+)/          // youtube.com/shorts/ID
+    /[?&]v=([A-Za-z0-9_-]{11})/,       // youtube.com/watch?v=ID
+    /youtu\.be\/([A-Za-z0-9_-]{11})/,    // youtu.be/ID
+    /shorts\/([A-Za-z0-9_-]{11})/        // youtube.com/shorts/ID
   ];
 
   for (const pattern of patterns) {

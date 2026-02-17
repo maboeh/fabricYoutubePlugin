@@ -16,6 +16,7 @@
   // State for cleanup and debouncing
   let observer = null;
   let addButtonTimeout = null;
+  let addButtonPending = false;
 
   // Load settings from storage
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
@@ -190,17 +191,14 @@
   // Listen for messages from popup or background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getVideoInfo') {
-      const videoInfo = getVideoInfo();
-      sendResponse({ videoInfo: videoInfo });
-    }
-    if (request.action === 'getPlaylistInfo') {
-      const playlistInfo = getPlaylistInfo();
-      sendResponse({ playlistInfo: playlistInfo });
-    }
-    if (request.action === 'isPlaylist') {
+      sendResponse({ videoInfo: getVideoInfo() });
+    } else if (request.action === 'getPlaylistInfo') {
+      sendResponse({ playlistInfo: getPlaylistInfo() });
+    } else if (request.action === 'isPlaylist') {
       sendResponse({ isPlaylist: isPlaylistPage() });
     }
-    return true;
+    // Synchronous responses — no need to keep the message channel open
+    return false;
   });
 
   // Create the floating save button element
@@ -340,12 +338,18 @@
         return;
       }
 
-      // Check for video player (initial load)
-      const videoPlayer = document.querySelector('#movie_player') ||
-                          document.querySelector('ytd-player');
+      // Check for video player (initial load) — debounce with rAF
+      if (!addButtonPending) {
+        const videoPlayer = document.querySelector('#movie_player') ||
+                            document.querySelector('ytd-player');
 
-      if (videoPlayer) {
-        addFloatingSaveButton();
+        if (videoPlayer) {
+          addButtonPending = true;
+          requestAnimationFrame(() => {
+            addFloatingSaveButton();
+            addButtonPending = false;
+          });
+        }
       }
     });
 

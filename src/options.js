@@ -74,50 +74,36 @@ async function saveSettings() {
   }
 }
 
-// Test API connection
+// Test API connection via background script (consistent auth handling, avoids CORS)
 async function testConnection() {
-  const baseUrl = elements.apiBaseUrl.value.trim();
-  const endpoint = elements.apiEndpoint.value.trim();
   const apiKey = elements.apiKey.value.trim();
-  const authType = elements.authType.value;
 
   if (!apiKey) {
     showMessage('error', 'Bitte gib einen API Key ein');
     return;
   }
 
+  // Save settings first so background uses current config
+  await saveSettings();
+
   elements.testConnectionBtn.textContent = 'Teste...';
   elements.testConnectionBtn.disabled = true;
 
   try {
-    // Build headers based on auth type
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-
-    // Fabric API uses X-Api-Key (with correct capitalization)
-    if (authType === 'apikey') {
-      headers['X-Api-Key'] = apiKey;
-    } else if (authType === 'oauth2') {
-      headers['Authorization'] = `Bearer ${apiKey}`;
-    }
-
-    // Test with a GET request to user endpoint
-    const testUrl = `${baseUrl}/v2/user/me`;
-
-    const response = await fetch(testUrl, {
-      method: 'GET',
-      headers: headers,
-      credentials: 'omit'
+    const result = await new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'validateApiKey', apiKey },
+        (response) => resolve(response || { valid: false, error: 'Keine Antwort' })
+      );
     });
 
-    if (response.ok) {
-      const userData = await response.json();
-      showMessage('success', `Verbindung erfolgreich! Eingeloggt als: ${userData.email || userData.name || 'Benutzer'}`);
-    } else if (response.status === 401 || response.status === 403) {
-      showMessage('error', 'Authentifizierung fehlgeschlagen. Bitte API Key prüfen.');
+    if (result.valid) {
+      const msg = result.warning
+        ? result.warning
+        : 'Verbindung erfolgreich! API Key ist gültig.';
+      showMessage('success', msg);
     } else {
-      showMessage('error', `API antwortet mit Status ${response.status}`);
+      showMessage('error', result.error || 'Verbindung fehlgeschlagen');
     }
   } catch (error) {
     console.error('Connection test error:', error);

@@ -6,8 +6,8 @@ import {
   isYouTubePlaylistUrl,
   extractVideoId,
   getThumbnailUrl,
-  getStorage,
-  removeStorage
+  removeStorage,
+  getStoredCredentials
 } from './shared/constants.js';
 
 // Runtime config (can be overridden by user settings)
@@ -72,6 +72,7 @@ const elements = {
 let currentVideoInfo = null;
 let currentPlaylistInfo = null;
 let lastSavedBookmarkUrl = null;
+let cachedCredentials = null;
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
@@ -81,26 +82,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 });
 
-// Check if user is authenticated
+// Check if user is authenticated (caches credentials for later use)
 async function checkAuthStatus() {
-  const credentials = await getStoredCredentials();
+  cachedCredentials = await getStoredCredentials();
 
-  if (credentials && credentials.apiKey) {
+  if (cachedCredentials && cachedCredentials.apiKey) {
     showLoggedIn();
   } else {
+    cachedCredentials = null;
     showLogin();
   }
 }
 
-// Get stored credentials from Chrome storage
-async function getStoredCredentials() {
-  try {
-    const result = await getStorage([STORAGE_KEYS.API_KEY]);
-    return { apiKey: result[STORAGE_KEYS.API_KEY] };
-  } catch (error) {
-    console.error('Error getting credentials:', error);
-    return { apiKey: null };
-  }
+// Get credentials (from cache or storage)
+async function getCachedCredentials() {
+  if (cachedCredentials) return cachedCredentials;
+  cachedCredentials = await getStoredCredentials();
+  return cachedCredentials;
 }
 
 // Store credentials via background script (avoids CORS issues)
@@ -269,6 +267,7 @@ async function handleSaveCredentials() {
     }
 
     await storeCredentials(apiKey);
+    cachedCredentials = { apiKey };
     showLoggedIn();
 
     // Show warning after login transition so it's visible in the logged-in state
@@ -286,6 +285,7 @@ async function handleSaveCredentials() {
 
 // Handle logout
 async function handleLogout() {
+  cachedCredentials = null;
   await clearCredentials();
   showLogin();
 }
@@ -297,7 +297,7 @@ async function handleSaveToFabric() {
     return;
   }
 
-  const credentials = await getStoredCredentials();
+  const credentials = await getCachedCredentials();
 
   if (!credentials || !credentials.apiKey) {
     showError('Bitte melde dich zuerst an');
@@ -305,7 +305,7 @@ async function handleSaveToFabric() {
     return;
   }
 
-  showLoading();
+  showLoading(elements.saveToFabricBtn);
 
   // Attach custom tags and note from popup fields
   const videoInfoWithExtras = { ...currentVideoInfo };
@@ -321,6 +321,7 @@ async function handleSaveToFabric() {
 
   try {
     const result = await saveToFabric(videoInfoWithExtras, credentials.apiKey);
+    hideLoading();
 
     if (result.success) {
       lastSavedBookmarkUrl = result.bookmarkUrl;
@@ -329,8 +330,8 @@ async function handleSaveToFabric() {
       if (elements.customTags) elements.customTags.value = '';
       if (elements.customNote) elements.customNote.value = '';
     } else {
-      // Handle auth expiry
       if (result.authExpired) {
+        cachedCredentials = null;
         showError('Session abgelaufen. Bitte erneut anmelden.');
         showLogin();
       } else {
@@ -338,6 +339,7 @@ async function handleSaveToFabric() {
       }
     }
   } catch (error) {
+    hideLoading();
     console.error('Error saving to Fabric:', error);
     showError('Verbindungsfehler: ' + error.message);
   }
@@ -363,7 +365,7 @@ async function handleSavePlaylist() {
     return;
   }
 
-  const credentials = await getStoredCredentials();
+  const credentials = await getCachedCredentials();
 
   if (!credentials || !credentials.apiKey) {
     showError('Bitte melde dich zuerst an');
@@ -371,7 +373,7 @@ async function handleSavePlaylist() {
     return;
   }
 
-  showLoading();
+  showLoading(elements.savePlaylistBtn);
   showPlaylistProgress(0, videoCount, 'Starte...');
 
   let saved = 0;
@@ -394,15 +396,18 @@ async function handleSavePlaylist() {
 
         // Stop on auth error
         if (result.authExpired) {
+          cachedCredentials = null;
+          hidePlaylistProgress();
+          hideLoading();
           showError('API Key abgelaufen. Bitte erneut anmelden.');
           showLogin();
-          hidePlaylistProgress();
           return;
         }
 
         // Circuit breaker: stop after 3 consecutive failures
         if (consecutiveFailures >= 3) {
           hidePlaylistProgress();
+          hideLoading();
           showError(`Abgebrochen nach ${consecutiveFailures} Fehlern. ${saved} von ${videoCount} gespeichert.`);
           return;
         }
@@ -410,6 +415,7 @@ async function handleSavePlaylist() {
     }
 
     hidePlaylistProgress();
+    hideLoading();
     if (failed === 0) {
       showSuccess(`${saved} von ${videoCount} Videos gespeichert!`);
     } else {
@@ -418,6 +424,7 @@ async function handleSavePlaylist() {
   } catch (error) {
     console.error('Error saving playlist:', error);
     hidePlaylistProgress();
+    hideLoading();
     showError('Verbindungsfehler: ' + error.message);
   }
 }
@@ -455,25 +462,34 @@ function showNoVideo() {
   elements.noVideoSection.classList.remove('hidden');
 }
 
-function showLoading() {
-  elements.saveToFabricBtn.disabled = true;
-  if (elements.savePlaylistBtn) {
-    elements.savePlaylistBtn.disabled = true;
+// Button tracking for loading state
+let _loadingTriggerBtn = null;
+
+function showLoading(triggerBtn = null) {
+  _loadingTriggerBtn = triggerBtn;
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+  } else {
+    // Fallback: disable all action buttons
+    elements.saveToFabricBtn.disabled = true;
+    if (elements.savePlaylistBtn) elements.savePlaylistBtn.disabled = true;
   }
   elements.loading.classList.remove('hidden');
   hideMessages();
 }
 
 function hideLoading() {
-  elements.saveToFabricBtn.disabled = false;
-  if (elements.savePlaylistBtn) {
-    elements.savePlaylistBtn.disabled = false;
+  if (_loadingTriggerBtn) {
+    _loadingTriggerBtn.disabled = false;
+    _loadingTriggerBtn = null;
+  } else {
+    elements.saveToFabricBtn.disabled = false;
+    if (elements.savePlaylistBtn) elements.savePlaylistBtn.disabled = false;
   }
   elements.loading.classList.add('hidden');
 }
 
 function showSuccess(message = 'Video erfolgreich in Fabric gespeichert!') {
-  hideLoading();
   elements.successMessage.querySelector('span:last-child').textContent = message;
   elements.successMessage.classList.remove('hidden');
 
@@ -509,7 +525,6 @@ function showPlaylistSection() {
 }
 
 function showError(message) {
-  hideLoading();
   elements.errorText.textContent = message;
   elements.errorMessage.classList.remove('hidden');
 
