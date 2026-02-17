@@ -14,8 +14,7 @@ const RETRY_CONFIG = {
   maxRetries: 2,
   delayMs: 1000,
   backoffMultiplier: 2,
-  rateLimitDelayMs: 5000,  // Longer delay for 429 responses
-  playlistDelayMs: 500     // Delay between playlist items
+  rateLimitDelayMs: 5000   // Longer delay for 429 responses
 };
 
 // Listen for keyboard shortcut
@@ -73,7 +72,14 @@ async function handleSaveShortcut() {
 
     if (result.success) {
       await showNotification('Gespeichert!', `"${videoInfo.title}" wurde in Fabric gespeichert`);
-      return { success: true };
+
+      // Auto-copy bookmark URL if enabled
+      const settings = await getStoredSettings();
+      if (settings.autoCopyUrl && result.bookmarkUrl) {
+        await copyToClipboard(result.bookmarkUrl, tab.id);
+      }
+
+      return { success: true, bookmarkUrl: result.bookmarkUrl };
     } else {
       // Show error notification (no fallback that opens Fabric)
       const errorMsg = result.error || 'Unbekannter Fehler';
@@ -111,12 +117,14 @@ async function getStoredConfig() {
   const result = await getStorage([
     STORAGE_KEYS.API_BASE_URL,
     STORAGE_KEYS.API_ENDPOINT,
-    STORAGE_KEYS.AUTH_TYPE
+    STORAGE_KEYS.AUTH_TYPE,
+    STORAGE_KEYS.DEFAULT_PARENT_ID
   ]);
   return {
     apiUrl: result[STORAGE_KEYS.API_BASE_URL] || DEFAULT_CONFIG.apiUrl,
     endpoint: result[STORAGE_KEYS.API_ENDPOINT] || DEFAULT_CONFIG.endpoint,
-    authType: result[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType
+    authType: result[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType,
+    parentId: result[STORAGE_KEYS.DEFAULT_PARENT_ID] || DEFAULT_CONFIG.defaultParentId
   };
 }
 
@@ -185,10 +193,23 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
       tags.push({ name: channel });
     }
 
+    // Merge custom tags from popup (if provided)
+    if (videoInfo.customTags && Array.isArray(videoInfo.customTags)) {
+      for (const tagName of videoInfo.customTags) {
+        if (typeof tagName !== 'string') continue;
+        const trimmed = tagName.trim();
+        if (trimmed && !tags.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
+          tags.push({ name: sanitizeText(trimmed, 100) });
+        }
+      }
+    }
+
     // Build request body with rich metadata
+    // TODO: Duplikat-Erkennung — Fabric API v2 hat keinen "search by URL" Endpoint.
+    // Sobald verfügbar, vor dem Speichern prüfen ob die URL bereits existiert.
     const requestBody = {
       url: videoInfo.url,
-      parentId: DEFAULT_CONFIG.defaultParentId,
+      parentId: config.parentId,
       name: title || null,
       tags: tags
     };
@@ -198,6 +219,11 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
     if (channel) commentParts.push(`Channel: ${channel}`);
     if (videoInfo.duration) commentParts.push(`Dauer: ${videoInfo.duration}`);
     if (description) commentParts.push(`\n${description}`);
+
+    // Append custom note from popup (if provided)
+    if (videoInfo.customNote) {
+      commentParts.push(`\n${sanitizeText(videoInfo.customNote, 1000)}`);
+    }
 
     if (commentParts.length > 0) {
       requestBody.comment = {
@@ -247,9 +273,21 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0) {
       return { success: false, error: 'Zu viele Anfragen - bitte später erneut versuchen' };
     }
 
-    // Don't retry on other client errors (4xx)
+    // Don't retry on other client errors (4xx) — surface API error details
     if (response.status >= 400 && response.status < 500) {
-      return { success: false, error: 'Ungültige Anfrage' };
+      let errorDetail = `API Fehler ${response.status}`;
+      try {
+        const errorBody = JSON.parse(errorText);
+        const apiMessage = errorBody.message || errorBody.error;
+        if (apiMessage) {
+          errorDetail = String(apiMessage).substring(0, 200);
+        }
+      } catch (_) {
+        if (errorText) {
+          errorDetail = errorText.substring(0, 200);
+        }
+      }
+      return { success: false, error: errorDetail };
     }
 
     // Retry on server errors (5xx)
@@ -314,14 +352,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     saveToFabric(request.videoInfo, request.apiKey)
-      .then((result) => sendResponse(result))
+      .then(async (result) => {
+        // Auto-copy if enabled
+        if (result.success) {
+          const settings = await getStoredSettings();
+          if (settings.autoCopyUrl && result.bookmarkUrl && sender.tab && sender.tab.id != null) {
+            await copyToClipboard(result.bookmarkUrl, sender.tab.id);
+          }
+        }
+        sendResponse(result);
+      })
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
-  if (request.action === 'savePlaylistToFabric') {
-    savePlaylistToFabric(request.videos, request.apiKey, sender.tab?.id)
-      .then((result) => sendResponse(result))
+  // Content script sends videoInfo directly — avoids race condition with tab re-query
+  if (request.action === 'saveFromContentScript') {
+    const videoInfo = request.videoInfo;
+    if (!videoInfo || !isYouTubeVideoUrl(videoInfo.url)) {
+      sendResponse({ success: false, error: 'Keine gültige YouTube URL' });
+      return true;
+    }
+    getStoredCredentials()
+      .then(async (credentials) => {
+        if (!credentials || !credentials.apiKey) {
+          sendResponse({ success: false, error: 'Nicht angemeldet' });
+          return;
+        }
+        const result = await saveToFabric(videoInfo, credentials.apiKey);
+
+        // Auto-copy if enabled
+        if (result.success) {
+          const settings = await getStoredSettings();
+          if (settings.autoCopyUrl && result.bookmarkUrl && sender.tab && sender.tab.id != null) {
+            await copyToClipboard(result.bookmarkUrl, sender.tab.id);
+          }
+        }
+
+        sendResponse(result);
+      })
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
@@ -342,56 +411,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
-
-// Save multiple videos from a playlist
-async function savePlaylistToFabric(videos, apiKey, tabId) {
-  const results = {
-    total: videos.length,
-    saved: 0,
-    failed: 0,
-    errors: []
-  };
-
-  for (let i = 0; i < videos.length; i++) {
-    const video = videos[i];
-
-    // Update progress notification
-    await showNotification(
-      'Playlist speichern...',
-      `Video ${i + 1} von ${videos.length}: ${video.title || 'Unbekannt'}`
-    );
-
-    const result = await saveToFabric(video, apiKey);
-
-    if (result.success) {
-      results.saved++;
-    } else {
-      results.failed++;
-      results.errors.push({ video: video.title, error: result.error });
-
-      // Stop on auth error
-      if (result.authExpired) {
-        return {
-          success: false,
-          error: 'API Key abgelaufen',
-          authExpired: true,
-          results
-        };
-      }
-    }
-
-    // Small delay between saves to avoid rate limiting
-    if (i < videos.length - 1) {
-      await sleep(RETRY_CONFIG.playlistDelayMs);
-    }
-  }
-
-  return {
-    success: results.failed === 0,
-    results,
-    message: `${results.saved} von ${results.total} Videos gespeichert`
-  };
-}
 
 // Validate API key by testing against user endpoint
 async function validateApiKey(apiKey) {

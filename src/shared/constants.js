@@ -9,7 +9,8 @@ export const STORAGE_KEYS = {
   AUTH_TYPE: 'fabricAuthType',
   SHOW_FLOATING_BUTTON: 'fabricShowFloatingButton',
   SHOW_NOTIFICATIONS: 'fabricShowNotifications',
-  AUTO_COPY_URL: 'fabricAutoCopyUrl'
+  AUTO_COPY_URL: 'fabricAutoCopyUrl',
+  DEFAULT_PARENT_ID: 'fabricDefaultParentId'
 };
 
 // Default configuration (based on Fabric API v2)

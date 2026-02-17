@@ -58,8 +58,14 @@ const elements = {
   videoTitle: document.getElementById('video-title'),
   videoChannel: document.getElementById('video-channel'),
 
+  customTags: document.getElementById('custom-tags'),
+  customNote: document.getElementById('custom-note'),
+
   playlistTitle: document.getElementById('playlist-title'),
-  playlistCount: document.getElementById('playlist-count')
+  playlistCount: document.getElementById('playlist-count'),
+  playlistProgress: document.getElementById('playlist-progress'),
+  progressFill: document.getElementById('progress-fill'),
+  progressText: document.getElementById('progress-text')
 };
 
 // State
@@ -301,12 +307,27 @@ async function handleSaveToFabric() {
 
   showLoading();
 
+  // Attach custom tags and note from popup fields
+  const videoInfoWithExtras = { ...currentVideoInfo };
+  if (elements.customTags && elements.customTags.value.trim()) {
+    videoInfoWithExtras.customTags = elements.customTags.value
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+  }
+  if (elements.customNote && elements.customNote.value.trim()) {
+    videoInfoWithExtras.customNote = elements.customNote.value.trim();
+  }
+
   try {
-    const result = await saveToFabric(currentVideoInfo, credentials.apiKey);
+    const result = await saveToFabric(videoInfoWithExtras, credentials.apiKey);
 
     if (result.success) {
       lastSavedBookmarkUrl = result.bookmarkUrl;
-      showSuccess('Video erfolgreich in Fabric gespeichert!', lastSavedBookmarkUrl);
+      showSuccess('Video erfolgreich in Fabric gespeichert!');
+      // Clear fields after successful save
+      if (elements.customTags) elements.customTags.value = '';
+      if (elements.customNote) elements.customNote.value = '';
     } else {
       // Handle auth expiry
       if (result.authExpired) {
@@ -322,19 +343,23 @@ async function handleSaveToFabric() {
   }
 }
 
-// Handle open in Fabric
+// Handle open in Fabric — opens last saved bookmark or Fabric home
 function handleOpenInFabric() {
-  if (lastSavedBookmarkUrl) {
-    chrome.runtime.sendMessage({ action: 'openInFabric', url: lastSavedBookmarkUrl });
-  } else {
-    chrome.runtime.sendMessage({ action: 'openInFabric', url: DEFAULT_CONFIG.baseUrl + '/home' });
-  }
+  const url = lastSavedBookmarkUrl || DEFAULT_CONFIG.baseUrl + '/home';
+  chrome.runtime.sendMessage({ action: 'openInFabric', url });
 }
 
-// Handle save playlist
+// Handle save playlist — saves each video individually with progress UI
 async function handleSavePlaylist() {
   if (!currentPlaylistInfo || !currentPlaylistInfo.videos.length) {
     showError('Keine Playlist zum Speichern');
+    return;
+  }
+
+  const videoCount = currentPlaylistInfo.videos.length;
+
+  // Confirmation before bulk save
+  if (!confirm(`${videoCount} Videos in Fabric speichern?`)) {
     return;
   }
 
@@ -347,36 +372,54 @@ async function handleSavePlaylist() {
   }
 
   showLoading();
+  showPlaylistProgress(0, videoCount, 'Starte...');
+
+  let saved = 0;
+  let failed = 0;
+  let consecutiveFailures = 0;
 
   try {
-    const result = await savePlaylistToFabric(currentPlaylistInfo.videos, credentials.apiKey);
+    for (let i = 0; i < videoCount; i++) {
+      const video = currentPlaylistInfo.videos[i];
+      showPlaylistProgress(i, videoCount, video.title || `Video ${i + 1}`);
 
-    if (result.success) {
-      showSuccess(`${result.results.saved} von ${result.results.total} Videos gespeichert!`);
-    } else {
-      if (result.authExpired) {
-        showError('Session abgelaufen. Bitte erneut anmelden.');
-        showLogin();
+      const result = await saveToFabric(video, credentials.apiKey);
+
+      if (result.success) {
+        saved++;
+        consecutiveFailures = 0;
       } else {
-        showError(result.error || `Fehler: ${result.results?.failed || 0} Videos fehlgeschlagen`);
+        failed++;
+        consecutiveFailures++;
+
+        // Stop on auth error
+        if (result.authExpired) {
+          showError('API Key abgelaufen. Bitte erneut anmelden.');
+          showLogin();
+          hidePlaylistProgress();
+          return;
+        }
+
+        // Circuit breaker: stop after 3 consecutive failures
+        if (consecutiveFailures >= 3) {
+          hidePlaylistProgress();
+          showError(`Abgebrochen nach ${consecutiveFailures} Fehlern. ${saved} von ${videoCount} gespeichert.`);
+          return;
+        }
       }
+    }
+
+    hidePlaylistProgress();
+    if (failed === 0) {
+      showSuccess(`${saved} von ${videoCount} Videos gespeichert!`);
+    } else {
+      showError(`${saved} gespeichert, ${failed} fehlgeschlagen`);
     }
   } catch (error) {
     console.error('Error saving playlist:', error);
+    hidePlaylistProgress();
     showError('Verbindungsfehler: ' + error.message);
   }
-}
-
-// Save playlist via background script
-async function savePlaylistToFabric(videos, apiKey) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: 'savePlaylistToFabric', videos: videos, apiKey: apiKey },
-      (response) => {
-        resolve(response || { success: false, error: 'Keine Antwort vom Background Script' });
-      }
-    );
-  });
 }
 
 // Save to Fabric via background script (avoids CORS issues)
@@ -429,19 +472,34 @@ function hideLoading() {
   elements.loading.classList.add('hidden');
 }
 
-function showSuccess(message = 'Video erfolgreich in Fabric gespeichert!', bookmarkUrl = null) {
+function showSuccess(message = 'Video erfolgreich in Fabric gespeichert!') {
   hideLoading();
   elements.successMessage.querySelector('span:last-child').textContent = message;
   elements.successMessage.classList.remove('hidden');
 
-  // Show "Open in Fabric" button if we have a bookmark URL
-  if (elements.openInFabricBtn && bookmarkUrl) {
-    elements.openInFabricBtn.classList.remove('hidden');
-  }
-
   setTimeout(() => {
     elements.successMessage.classList.add('hidden');
   }, 5000);
+}
+
+// Playlist progress helpers
+function showPlaylistProgress(current, total, videoTitle) {
+  if (elements.playlistProgress) {
+    elements.playlistProgress.classList.remove('hidden');
+  }
+  if (elements.progressFill) {
+    const percent = total > 0 ? Math.round(((current + 1) / total) * 100) : 0;
+    elements.progressFill.style.width = `${percent}%`;
+  }
+  if (elements.progressText) {
+    elements.progressText.textContent = `${current + 1} von ${total}: ${videoTitle}`;
+  }
+}
+
+function hidePlaylistProgress() {
+  if (elements.playlistProgress) {
+    elements.playlistProgress.classList.add('hidden');
+  }
 }
 
 function showPlaylistSection() {
@@ -463,10 +521,6 @@ function showError(message) {
 function hideMessages() {
   elements.successMessage.classList.add('hidden');
   elements.errorMessage.classList.add('hidden');
-  // Hide "Open in Fabric" button when starting new action
-  if (elements.openInFabricBtn) {
-    elements.openInFabricBtn.classList.add('hidden');
-  }
 }
 
 function hideAllSections() {

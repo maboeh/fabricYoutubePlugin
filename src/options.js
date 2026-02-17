@@ -6,6 +6,7 @@ const elements = {
   apiEndpoint: document.getElementById('api-endpoint'),
   apiKey: document.getElementById('api-key'),
   authType: document.getElementById('auth-type'),
+  defaultParentId: document.getElementById('default-parent-id'),
   showFloatingButton: document.getElementById('show-floating-button'),
   showNotifications: document.getElementById('show-notifications'),
   autoCopyUrl: document.getElementById('auto-copy-url'),
@@ -30,6 +31,7 @@ async function loadSettings() {
       STORAGE_KEYS.API_ENDPOINT,
       STORAGE_KEYS.API_KEY,
       STORAGE_KEYS.AUTH_TYPE,
+      STORAGE_KEYS.DEFAULT_PARENT_ID,
       STORAGE_KEYS.SHOW_FLOATING_BUTTON,
       STORAGE_KEYS.SHOW_NOTIFICATIONS,
       STORAGE_KEYS.AUTO_COPY_URL
@@ -41,6 +43,7 @@ async function loadSettings() {
   elements.apiEndpoint.value = settings[STORAGE_KEYS.API_ENDPOINT] || DEFAULT_CONFIG.endpoint;
   elements.apiKey.value = settings[STORAGE_KEYS.API_KEY] || '';
   elements.authType.value = settings[STORAGE_KEYS.AUTH_TYPE] || DEFAULT_CONFIG.authType;
+  elements.defaultParentId.value = settings[STORAGE_KEYS.DEFAULT_PARENT_ID] || DEFAULT_CONFIG.defaultParentId;
 
   elements.showFloatingButton.checked = settings[STORAGE_KEYS.SHOW_FLOATING_BUTTON] !== false;
   elements.showNotifications.checked = settings[STORAGE_KEYS.SHOW_NOTIFICATIONS] !== false;
@@ -54,6 +57,7 @@ async function saveSettings() {
     [STORAGE_KEYS.API_ENDPOINT]: elements.apiEndpoint.value.trim(),
     [STORAGE_KEYS.API_KEY]: elements.apiKey.value.trim(),
     [STORAGE_KEYS.AUTH_TYPE]: elements.authType.value,
+    [STORAGE_KEYS.DEFAULT_PARENT_ID]: elements.defaultParentId.value.trim() || DEFAULT_CONFIG.defaultParentId,
     [STORAGE_KEYS.SHOW_FLOATING_BUTTON]: elements.showFloatingButton.checked,
     [STORAGE_KEYS.SHOW_NOTIFICATIONS]: elements.showNotifications.checked,
     [STORAGE_KEYS.AUTO_COPY_URL]: elements.autoCopyUrl.checked

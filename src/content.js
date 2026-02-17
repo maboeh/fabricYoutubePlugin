@@ -260,7 +260,12 @@
       button.querySelector('span').textContent = 'Speichern...';
 
       try {
-        const response = await chrome.runtime.sendMessage({ action: 'saveToFabric' });
+        // Send videoInfo directly to avoid race condition with tab re-query
+        const videoInfo = getVideoInfo();
+        const response = await chrome.runtime.sendMessage({
+          action: 'saveFromContentScript',
+          videoInfo: videoInfo
+        });
 
         if (response && response.success) {
           button.classList.remove('saving');

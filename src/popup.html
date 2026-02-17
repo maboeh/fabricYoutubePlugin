@@ -30,6 +30,7 @@
       <div class="status-bar">
         <span class="status-indicator online"></span>
         <span>Verbunden mit Fabric</span>
+        <button id="open-in-fabric" class="btn-link">Fabric</button>
         <button id="logout-btn" class="btn-link">Abmelden</button>
       </div>
     </div>
@@ -42,6 +43,10 @@
           <h3 id="video-title">Video Titel</h3>
           <p id="video-channel" class="channel-name">Channel Name</p>
         </div>
+      </div>
+      <div class="extra-fields">
+        <input type="text" id="custom-tags" placeholder="Tags, z.B. Tutorial, React" class="input-small">
+        <textarea id="custom-note" rows="2" placeholder="Optionale Notiz..." class="input-small"></textarea>
       </div>
       <button id="save-to-fabric" class="btn btn-primary btn-large">
         <span class="btn-icon">+</span>
@@ -72,6 +77,12 @@
         <span class="btn-icon">+</span>
         Alle Videos speichern
       </button>
+      <div id="playlist-progress" class="playlist-progress hidden">
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <p id="progress-text" class="progress-text">0 von 0 Videos...</p>
+      </div>
       <p class="shortcut-hint">Scrolle in der Playlist um mehr Videos zu laden</p>
     </div>
 
@@ -80,11 +91,6 @@
       <span class="message-icon">&#10003;</span>
       <span>Video erfolgreich in Fabric gespeichert!</span>
     </div>
-
-    <!-- Open in Fabric Button -->
-    <button id="open-in-fabric" class="btn btn-secondary btn-small hidden">
-      In Fabric öffnen
-    </button>
 
     <!-- Error Message -->
     <div id="error-message" class="message error hidden">
