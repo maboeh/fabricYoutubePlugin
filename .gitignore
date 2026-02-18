@@ -4,10 +4,8 @@ node_modules/
 # Build output
 dist/
 
-# Xcode derived data
-safari-app/**/DerivedData/
-safari-app/**/*.xcuserdata/
-safari-app/**/build/
+# Xcode project (generated via safari-web-extension-converter)
+safari-app/
 
 # IDE
 .idea/
