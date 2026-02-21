@@ -107,7 +107,7 @@ Alle JS-Dateien nutzen `api.*` statt `chrome.*`. Der Polyfill in `shared/browser
 **content.js** - Content Script (nur YouTube, KEIN Module)
 - Video-Metadaten aus DOM extrahieren (Titel, Channel, Thumbnail)
 - Floating "Fabric"-Button (respektiert User-Settings)
-- MutationObserver für YouTube SPA-Navigation
+- `yt-navigate-finish` Event für YouTube SPA-Navigation + bounded Polling für Player-Erkennung
 - Sendet `saveFromContentScript` mit videoInfo direkt (vermeidet Race Condition)
 
 **popup.js** - Extension Popup (ES6 Module)
@@ -175,7 +175,7 @@ X-Api-Key: <api-key>
 
 - Content Scripts können keine ES6 Module importieren — `content.js` ist eigenständig und enthält einen Inline-Polyfill. Bei Änderungen an `shared/browser-api.js` muss `content.js` manuell angepasst werden.
 - Service Worker hat keinen Zugriff auf `navigator.clipboard` — nutzt `api.scripting.executeScript`
-- YouTube ist eine SPA — MutationObserver für Navigation-Erkennung erforderlich
+- YouTube ist eine SPA — `yt-navigate-finish` Custom Event für Navigation-Erkennung, `popstate` als Fallback für Browser-Back/Forward
 - DNR-Regel (`rules.json`) entfernt den `Origin`-Header bei Requests an `api.fabric.so` — bewusster Workaround für CORS-Einschränkungen der Fabric API. Chrome nutzt `urlFilter` (performanter), Safari benötigt `regexFilter`.
 - API-Strings (Titel, Channel, Beschreibung) werden vor dem Versand über `sanitizeText()` bereinigt
 - `validateApiKey()` behandelt HTTP 500 als "gültig mit Warning" — die Fabric API gibt gelegentlich 500 bei gültigen Keys zurück

@@ -121,6 +121,8 @@ async function testConnection() {
 }
 
 // Show message
+let _messageTimer = null;
+
 function showMessage(type, text) {
   // Hide all messages
   elements.successMessage.classList.remove('show');
@@ -136,8 +138,10 @@ function showMessage(type, text) {
   }
 
   // Auto-hide after 5 seconds
-  setTimeout(() => {
+  if (_messageTimer) clearTimeout(_messageTimer);
+  _messageTimer = setTimeout(() => {
     elements.successMessage.classList.remove('show');
     elements.errorMessage.classList.remove('show');
+    _messageTimer = null;
   }, 5000);
 }

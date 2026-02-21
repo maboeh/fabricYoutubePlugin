@@ -539,12 +539,17 @@ function hideLoading() {
   elements.loading.classList.add('hidden');
 }
 
+let _successTimer = null;
+let _errorTimer = null;
+
 function showSuccess(message = 'Video erfolgreich in Fabric gespeichert!') {
   elements.successMessage.querySelector('span:nth-of-type(2)').textContent = message;
   elements.successMessage.classList.remove('hidden');
 
-  setTimeout(() => {
+  if (_successTimer) clearTimeout(_successTimer);
+  _successTimer = setTimeout(() => {
     elements.successMessage.classList.add('hidden');
+    _successTimer = null;
   }, 10000);
 }
 
@@ -578,8 +583,10 @@ function showError(message) {
   elements.errorText.textContent = message;
   elements.errorMessage.classList.remove('hidden');
 
-  setTimeout(() => {
+  if (_errorTimer) clearTimeout(_errorTimer);
+  _errorTimer = setTimeout(() => {
     elements.errorMessage.classList.add('hidden');
+    _errorTimer = null;
   }, 10000);
 }
 

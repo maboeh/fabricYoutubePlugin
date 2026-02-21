@@ -18,9 +18,13 @@
   };
 
   // State for cleanup and debouncing
-  let observer = null;
   let addButtonTimeout = null;
-  let addButtonPending = false;
+  let playerCheckTimer = null;
+  let playerCheckCount = 0;
+  let buttonResetTimer = null;
+  let _onNavigateHandler = null;
+  const PLAYER_CHECK_MAX = 5;
+  const PLAYER_CHECK_INTERVAL = 300; // ms
 
   // Load settings from storage
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
@@ -31,14 +35,15 @@
     });
   }
 
-  // Listen for settings changes
+  // Listen for settings changes (named function for cleanup)
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
-  chrome.storage.onChanged.addListener((changes, namespace) => {
+  function onStorageChanged(changes, namespace) {
     if (namespace === 'local' && changes.fabricShowFloatingButton) {
       settings.showFloatingButton = changes.fabricShowFloatingButton.newValue !== false;
       updateFloatingButtonVisibility();
     }
-  });
+  }
+  chrome.storage.onChanged.addListener(onStorageChanged);
 
   // Update floating button visibility based on settings
   function updateFloatingButtonVisibility() {
@@ -237,20 +242,21 @@
   }
 
   // Add floating save button (optional feature)
+  // Returns true if button was added, false otherwise
   function addFloatingSaveButton() {
     // Check if button already exists
     if (document.getElementById('fabric-save-button')) {
-      return;
+      return false;
     }
 
     // Only add on video pages
     if (!window.location.pathname.includes('/watch') && !window.location.pathname.includes('/shorts/')) {
-      return;
+      return false;
     }
 
     // Respect user settings
     if (!settings.showFloatingButton) {
-      return;
+      return false;
     }
 
     const button = createButtonElement();
@@ -277,9 +283,11 @@
           button.classList.add('saved');
           button.querySelector('span').textContent = 'Gespeichert!';
 
-          setTimeout(() => {
+          if (buttonResetTimer) clearTimeout(buttonResetTimer);
+          buttonResetTimer = setTimeout(() => {
             button.classList.remove('saved');
             button.querySelector('span').textContent = 'Fabric';
+            buttonResetTimer = null;
           }, 2000);
         } else {
           // Show specific error message
@@ -292,18 +300,25 @@
         const isAuthError = error.message?.includes('angemeldet') || error.message?.includes('API');
         button.querySelector('span').textContent = isAuthError ? 'Login!' : 'Fehler';
 
-        setTimeout(() => {
+        if (buttonResetTimer) clearTimeout(buttonResetTimer);
+        buttonResetTimer = setTimeout(() => {
           button.classList.remove('error');
           button.querySelector('span').textContent = 'Fabric';
+          buttonResetTimer = null;
         }, 3000);
       }
     });
 
     document.body.appendChild(button);
+    return true;
   }
 
   // Remove floating button (for navigation cleanup)
   function removeFloatingSaveButton() {
+    if (buttonResetTimer) {
+      clearTimeout(buttonResetTimer);
+      buttonResetTimer = null;
+    }
     const button = document.getElementById('fabric-save-button');
     if (button) {
       button.remove();
@@ -312,61 +327,96 @@
 
   // Cleanup function for page unload
   function cleanup() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
+    // Remove navigation event listeners
+    if (_onNavigateHandler) {
+      document.removeEventListener('yt-navigate-finish', _onNavigateHandler);
+      window.removeEventListener('popstate', _onNavigateHandler);
+      _onNavigateHandler = null;
     }
+
+    // Remove storage listener
+    chrome.storage.onChanged.removeListener(onStorageChanged);
+
+    // Clear all timers
     if (addButtonTimeout) {
       clearTimeout(addButtonTimeout);
       addButtonTimeout = null;
     }
+    if (playerCheckTimer) {
+      clearTimeout(playerCheckTimer);
+      playerCheckTimer = null;
+    }
+    if (buttonResetTimer) {
+      clearTimeout(buttonResetTimer);
+      buttonResetTimer = null;
+    }
+
     removeFloatingSaveButton();
+  }
+
+  // Player detection via bounded polling (replaces MutationObserver subtree watching)
+  function startPlayerCheck() {
+    cancelPlayerCheck(); // defensive: cancel any existing poll
+    attemptAddButton();
+  }
+
+  function attemptAddButton() {
+    if (playerCheckCount >= PLAYER_CHECK_MAX) return;
+
+    const videoPlayer = document.querySelector('#movie_player') ||
+                        document.querySelector('ytd-player');
+    if (videoPlayer) {
+      addFloatingSaveButton();
+    } else {
+      playerCheckCount++;
+      playerCheckTimer = setTimeout(attemptAddButton, PLAYER_CHECK_INTERVAL);
+    }
+  }
+
+  function cancelPlayerCheck() {
+    if (playerCheckTimer) {
+      clearTimeout(playerCheckTimer);
+      playerCheckTimer = null;
+    }
+    playerCheckCount = 0;
   }
 
   // Initialize when page is ready
   function init() {
     let lastUrl = location.href;
 
-    // Single MutationObserver for both video player detection and SPA navigation
-    observer = new MutationObserver(() => {
-      // Check for URL change (YouTube SPA navigation)
+    // Navigation handler for YouTube SPA transitions
+    function onNavigate() {
       const currentUrl = location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
 
-        // Remove old button and add new one after navigation (with debounce)
+        // Remove old button and cancel pending player checks
         removeFloatingSaveButton();
+        cancelPlayerCheck();
 
         // Clear any pending timeout to prevent race conditions
         if (addButtonTimeout) {
           clearTimeout(addButtonTimeout);
         }
-        addButtonTimeout = setTimeout(addFloatingSaveButton, 500);
-        return;
+        // Debounce: wait for page to settle, then start player detection
+        addButtonTimeout = setTimeout(startPlayerCheck, 300);
       }
+    }
 
-      // Check for video player (initial load) — debounce with rAF
-      if (!addButtonPending) {
-        const videoPlayer = document.querySelector('#movie_player') ||
-                            document.querySelector('ytd-player');
+    // Store reference for cleanup
+    _onNavigateHandler = onNavigate;
 
-        if (videoPlayer) {
-          addButtonPending = true;
-          requestAnimationFrame(() => {
-            addFloatingSaveButton();
-            addButtonPending = false;
-          });
-        }
-      }
-    });
+    // Primary: YouTube's own SPA navigation event (works in Chrome + Safari)
+    document.addEventListener('yt-navigate-finish', onNavigate);
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    // Secondary: browser back/forward navigation
+    window.addEventListener('popstate', onNavigate);
 
-    // Also try immediately
-    addFloatingSaveButton();
+    // Initial page load — try immediately, then poll if player not ready yet
+    if (!addFloatingSaveButton()) {
+      startPlayerCheck();
+    }
   }
 
   // Cleanup on page unload (prevents memory leaks)

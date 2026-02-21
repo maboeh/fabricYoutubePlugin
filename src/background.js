@@ -254,11 +254,11 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0, config = null) {
 
     if (response.ok) {
       const data = await response.json();
+      const bookmarkId = data.id;
       return {
         success: true,
-        data,
-        bookmarkId: data.id,
-        bookmarkUrl: `${DEFAULT_CONFIG.baseUrl}/resources/${data.id}`
+        bookmarkId,
+        bookmarkUrl: `${DEFAULT_CONFIG.baseUrl}/resources/${bookmarkId}`
       };
     }
 
