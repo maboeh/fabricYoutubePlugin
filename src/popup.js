@@ -507,11 +507,12 @@ function showLoading(triggerBtn = null) {
   _loadingTriggerBtn = triggerBtn;
   if (triggerBtn) {
     triggerBtn.disabled = true;
-    // Save original button content for restoration
     const icon = triggerBtn.querySelector('.btn-icon');
-    const textNode = [...triggerBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    const text = triggerBtn.querySelector('.btn-text');
     _loadingOrigIcon = icon ? icon.textContent : null;
-    _loadingOrigText = textNode ? textNode.textContent : null;
+    _loadingOrigText = text ? text.textContent : null;
+    if (icon) icon.textContent = '...';
+    if (text) text.textContent = 'Speichern...';
   } else {
     // Fallback: disable all action buttons
     elements.saveToFabricBtn.disabled = true;
@@ -524,14 +525,13 @@ function showLoading(triggerBtn = null) {
 function hideLoading() {
   if (_loadingTriggerBtn) {
     _loadingTriggerBtn.disabled = false;
-    // Restore original button content
     if (_loadingOrigIcon !== null) {
       const icon = _loadingTriggerBtn.querySelector('.btn-icon');
       if (icon) icon.textContent = _loadingOrigIcon;
     }
     if (_loadingOrigText !== null) {
-      const textNode = [..._loadingTriggerBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
-      if (textNode) textNode.textContent = _loadingOrigText;
+      const text = _loadingTriggerBtn.querySelector('.btn-text');
+      if (text) text.textContent = _loadingOrigText;
     }
     _loadingTriggerBtn = null;
     _loadingOrigIcon = null;
