@@ -37,12 +37,24 @@ export const YOUTUBE_PATTERNS = {
   PLAYLIST: 'youtube.com/playlist'
 };
 
+// Validate hostname is a known YouTube domain
+function isYouTubeHost(url) {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'www.youtube.com' || hostname === 'youtube.com' || hostname === 'youtu.be';
+  } catch {
+    return false;
+  }
+}
+
 // Check if URL is a YouTube video
 export function isYouTubeVideoUrl(url) {
   if (!url) return false;
-  return (
+  if (url.includes(YOUTUBE_PATTERNS.SHORT_URL)) {
+    try { return new URL(url).hostname === 'youtu.be'; } catch { return false; }
+  }
+  return isYouTubeHost(url) && (
     url.includes(YOUTUBE_PATTERNS.WATCH) ||
-    url.includes(YOUTUBE_PATTERNS.SHORT_URL) ||
     url.includes(YOUTUBE_PATTERNS.SHORTS)
   );
 }
@@ -50,8 +62,7 @@ export function isYouTubeVideoUrl(url) {
 // Check if URL is a YouTube playlist page (not video in playlist)
 export function isYouTubePlaylistUrl(url) {
   if (!url) return false;
-  // Only match dedicated playlist pages, not videos within playlists
-  return url.includes(YOUTUBE_PATTERNS.PLAYLIST) && !url.includes('/watch');
+  return isYouTubeHost(url) && url.includes(YOUTUBE_PATTERNS.PLAYLIST) && !url.includes('/watch');
 }
 
 // Storage helper functions (Promise-based with error handling)
