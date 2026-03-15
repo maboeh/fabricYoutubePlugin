@@ -16,10 +16,7 @@
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://youtube.com/*",
-    "https://fabric.so/*",
-    "https://*.fabric.so/*",
-    "https://api.fabric.so/*",
-    "https://developers.fabric.so/*"
+    "https://api.fabric.so/*"
   ],
   "options_ui": {
     "page": "options.html",

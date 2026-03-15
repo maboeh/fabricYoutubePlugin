@@ -13,6 +13,15 @@
   // Cross-browser API polyfill (inline version of shared/browser-api.js)
   const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
 
+  // UI Constants (content.js can't import ES6 modules)
+  const BUTTON_ID = 'fabric-save-button';
+  const BUTTON_TEXT = 'Fabric';
+  const BUTTON_SAVING_TEXT = 'Speichern...';
+  const BUTTON_SAVED_TEXT = 'Gespeichert!';
+  const BUTTON_ERROR_TEXT = 'Fehler';
+  const BUTTON_AUTH_ERROR_TEXT = 'Login!';
+  const STORAGE_KEY_FLOATING_BUTTON = 'fabricShowFloatingButton';
+
   // Settings cache
   let settings = {
     showFloatingButton: true
@@ -30,8 +39,8 @@
   // Load settings from storage
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
   function loadSettings() {
-    api.storage.local.get(['fabricShowFloatingButton'], (result) => {
-      settings.showFloatingButton = result.fabricShowFloatingButton !== false;
+    api.storage.local.get([STORAGE_KEY_FLOATING_BUTTON], (result) => {
+      settings.showFloatingButton = result[STORAGE_KEY_FLOATING_BUTTON] !== false;
       updateFloatingButtonVisibility();
     });
   }
@@ -39,8 +48,8 @@
   // Listen for settings changes (named function for cleanup)
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
   function onStorageChanged(changes, namespace) {
-    if (namespace === 'local' && changes.fabricShowFloatingButton) {
-      settings.showFloatingButton = changes.fabricShowFloatingButton.newValue !== false;
+    if (namespace === 'local' && changes[STORAGE_KEY_FLOATING_BUTTON]) {
+      settings.showFloatingButton = changes[STORAGE_KEY_FLOATING_BUTTON].newValue !== false;
       updateFloatingButtonVisibility();
     }
   }
@@ -48,7 +57,7 @@
 
   // Update floating button visibility based on settings
   function updateFloatingButtonVisibility() {
-    const button = document.getElementById('fabric-save-button');
+    const button = document.getElementById(BUTTON_ID);
     if (button) {
       button.style.display = settings.showFloatingButton ? 'flex' : 'none';
     }
@@ -214,7 +223,7 @@
   // Create the floating save button element
   function createButtonElement() {
     const button = document.createElement('button');
-    button.id = 'fabric-save-button';
+    button.id = BUTTON_ID;
     button.title = 'In Fabric speichern (Alt+Shift+F)';
 
     button.setAttribute('aria-label', 'Video in Fabric speichern');
@@ -234,7 +243,7 @@
     svg.appendChild(path);
 
     const span = document.createElement('span');
-    span.textContent = 'Fabric';
+    span.textContent = BUTTON_TEXT;
 
     button.appendChild(svg);
     button.appendChild(span);
@@ -246,7 +255,7 @@
   // Returns true if button was added, false otherwise
   function addFloatingSaveButton() {
     // Check if button already exists
-    if (document.getElementById('fabric-save-button')) {
+    if (document.getElementById(BUTTON_ID)) {
       return false;
     }
 
@@ -270,7 +279,7 @@
 
       button.classList.add('saving');
       button.setAttribute('aria-busy', 'true');
-      button.querySelector('span').textContent = 'Speichern...';
+      button.querySelector('span').textContent = BUTTON_SAVING_TEXT;
 
       try {
         // Send videoInfo directly to avoid race condition with tab re-query
@@ -287,12 +296,12 @@
           button.classList.remove('saving');
           button.removeAttribute('aria-busy');
           button.classList.add('saved');
-          button.querySelector('span').textContent = 'Gespeichert!';
+          button.querySelector('span').textContent = BUTTON_SAVED_TEXT;
 
           if (buttonResetTimer) clearTimeout(buttonResetTimer);
           buttonResetTimer = setTimeout(() => {
             button.classList.remove('saved');
-            button.querySelector('span').textContent = 'Fabric';
+            button.querySelector('span').textContent = BUTTON_TEXT;
             buttonResetTimer = null;
           }, 2000);
         } else {
@@ -305,12 +314,12 @@
         button.classList.add('error');
         // Show short error hint if not logged in
         const isAuthError = error.message?.includes('angemeldet') || error.message?.includes('API');
-        button.querySelector('span').textContent = isAuthError ? 'Login!' : 'Fehler';
+        button.querySelector('span').textContent = isAuthError ? BUTTON_AUTH_ERROR_TEXT : BUTTON_ERROR_TEXT;
 
         if (buttonResetTimer) clearTimeout(buttonResetTimer);
         buttonResetTimer = setTimeout(() => {
           button.classList.remove('error');
-          button.querySelector('span').textContent = 'Fabric';
+          button.querySelector('span').textContent = BUTTON_TEXT;
           buttonResetTimer = null;
         }, 3000);
       }
@@ -326,7 +335,7 @@
       clearTimeout(buttonResetTimer);
       buttonResetTimer = null;
     }
-    const button = document.getElementById('fabric-save-button');
+    const button = document.getElementById(BUTTON_ID);
     if (button) {
       button.remove();
     }
