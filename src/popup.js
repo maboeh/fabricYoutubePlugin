@@ -6,33 +6,37 @@ import {
   isYouTubePlaylistUrl,
   extractVideoId,
   getThumbnailUrl,
+  getStorage,
+  setStorage,
   removeStorage,
   getStoredCredentials
 } from './shared/constants.js';
+import { api } from './shared/browser-api.js';
 
 // Runtime config (can be overridden by user settings)
 let config = { ...DEFAULT_CONFIG };
 
 // Load configuration from storage
 async function loadConfig() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([
+  try {
+    const result = await getStorage([
       STORAGE_KEYS.API_BASE_URL,
       STORAGE_KEYS.API_ENDPOINT,
       STORAGE_KEYS.AUTH_TYPE
-    ], (result) => {
-      if (result[STORAGE_KEYS.API_BASE_URL]) {
-        config.apiUrl = result[STORAGE_KEYS.API_BASE_URL];
-      }
-      if (result[STORAGE_KEYS.API_ENDPOINT]) {
-        config.endpoint = result[STORAGE_KEYS.API_ENDPOINT];
-      }
-      if (result[STORAGE_KEYS.AUTH_TYPE]) {
-        config.authType = result[STORAGE_KEYS.AUTH_TYPE];
-      }
-      resolve(config);
-    });
-  });
+    ]);
+    if (result[STORAGE_KEYS.API_BASE_URL]) {
+      config.apiUrl = result[STORAGE_KEYS.API_BASE_URL];
+    }
+    if (result[STORAGE_KEYS.API_ENDPOINT]) {
+      config.endpoint = result[STORAGE_KEYS.API_ENDPOINT];
+    }
+    if (result[STORAGE_KEYS.AUTH_TYPE]) {
+      config.authType = result[STORAGE_KEYS.AUTH_TYPE];
+    }
+  } catch (error) {
+    console.error('Error loading config:', error);
+  }
+  return config;
 }
 
 // DOM Elements
@@ -101,13 +105,9 @@ async function getCachedCredentials() {
   return cachedCredentials;
 }
 
-// Store credentials via background script (avoids CORS issues)
+// Store credentials
 async function storeCredentials(apiKey) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({
-      [STORAGE_KEYS.API_KEY]: apiKey
-    }, resolve);
-  });
+  await setStorage({ [STORAGE_KEYS.API_KEY]: apiKey });
 }
 
 // Clear credentials
@@ -122,7 +122,7 @@ async function clearCredentials() {
 // Check current tab for YouTube video or playlist
 async function checkCurrentTab() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await api.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.url) {
       showNoVideo();
@@ -132,7 +132,7 @@ async function checkCurrentTab() {
     // Check for playlist first
     if (isYouTubePlaylistUrl(tab.url)) {
       try {
-        const response = await chrome.tabs.sendMessage(tab.id, { action: 'getPlaylistInfo' });
+        const response = await api.tabs.sendMessage(tab.id, { action: 'getPlaylistInfo' });
         if (response && response.playlistInfo && response.playlistInfo.videos.length > 0) {
           currentPlaylistInfo = response.playlistInfo;
           displayPlaylistInfo(currentPlaylistInfo);
@@ -148,7 +148,7 @@ async function checkCurrentTab() {
     if (isYouTubeVideoUrl(tab.url)) {
       // Try to get video info from content script
       try {
-        const response = await chrome.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
+        const response = await api.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
         if (response && response.videoInfo) {
           currentVideoInfo = response.videoInfo;
           displayVideoInfo(currentVideoInfo);
@@ -197,15 +197,21 @@ function displayPlaylistInfo(info) {
 
 // Display video information
 function displayVideoInfo(info) {
-  elements.videoTitle.textContent = info.title || 'Unbekannter Titel';
-  elements.videoChannel.textContent = info.channel || 'YouTube';
+  if (elements.videoTitle) {
+    elements.videoTitle.textContent = info.title || 'Unbekannter Titel';
+  }
+  if (elements.videoChannel) {
+    elements.videoChannel.textContent = info.channel || 'YouTube';
+  }
 
-  if (info.thumbnail) {
-    elements.videoThumbnail.src = info.thumbnail;
-    elements.videoThumbnail.alt = info.title ? `Thumbnail: ${info.title}` : 'Video Thumbnail';
-    elements.videoThumbnail.style.display = 'block';
-  } else {
-    elements.videoThumbnail.style.display = 'none';
+  if (elements.videoThumbnail) {
+    if (info.thumbnail) {
+      elements.videoThumbnail.src = info.thumbnail;
+      elements.videoThumbnail.alt = info.title ? `Thumbnail: ${info.title}` : 'Video Thumbnail';
+      elements.videoThumbnail.style.display = 'block';
+    } else {
+      elements.videoThumbnail.style.display = 'none';
+    }
   }
 }
 
@@ -247,20 +253,30 @@ function setupEventListeners() {
   });
 }
 
+// Send message to background script with timeout
+function sendMessageWithTimeout(message, timeoutMs = 10000) {
+  return new Promise((resolve) => {
+    const timeoutError = 'Zeitüberschreitung. Bitte Extension neu laden.';
+    const unreachableError = 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.';
+
+    const timer = setTimeout(() => {
+      resolve({ success: false, valid: false, error: timeoutError });
+    }, timeoutMs);
+
+    api.runtime.sendMessage(message, (response) => {
+      clearTimeout(timer);
+      if (api.runtime.lastError) {
+        resolve({ success: false, valid: false, error: unreachableError });
+        return;
+      }
+      resolve(response || { success: false, valid: false, error: 'Keine Antwort vom Background Script' });
+    });
+  });
+}
+
 // Validate API key via background script (avoids CORS issues)
 async function validateApiKey(apiKey) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: 'validateApiKey', apiKey: apiKey },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ valid: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
-          return;
-        }
-        resolve(response || { valid: false, error: 'Keine Antwort vom Background Script' });
-      }
-    );
-  });
+  return sendMessageWithTimeout({ action: 'validateApiKey', apiKey });
 }
 
 // Handle saving credentials
@@ -325,10 +341,6 @@ async function handleSaveToFabric() {
   }
 
   showLoading(elements.saveToFabricBtn);
-  const btnIcon = elements.saveToFabricBtn.querySelector('.btn-icon');
-  if (btnIcon) btnIcon.textContent = '...';
-  const btnTextNode = [...elements.saveToFabricBtn.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
-  if (btnTextNode) btnTextNode.textContent = ' Speichern...';
 
   // Attach custom tags and note from popup fields
   const videoInfoWithExtras = { ...currentVideoInfo };
@@ -371,7 +383,7 @@ async function handleSaveToFabric() {
 // Handle open in Fabric — opens last saved bookmark or Fabric home
 function handleOpenInFabric() {
   const url = lastSavedBookmarkUrl || DEFAULT_CONFIG.baseUrl + '/home';
-  chrome.runtime.sendMessage({ action: 'openInFabric', url });
+  api.runtime.sendMessage({ action: 'openInFabric', url });
 }
 
 // Handle save playlist — saves each video individually with progress UI
@@ -459,18 +471,10 @@ async function handleSavePlaylist() {
 
 // Save to Fabric via background script (avoids CORS issues)
 async function saveToFabric(videoInfo, apiKey) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: 'saveVideoToFabric', videoInfo: videoInfo, apiKey: apiKey },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ success: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
-          return;
-        }
-        resolve(response || { success: false, error: 'Keine Antwort vom Background Script' });
-      }
-    );
-  });
+  return sendMessageWithTimeout(
+    { action: 'saveVideoToFabric', videoInfo, apiKey },
+    60000 // 60s timeout for save operations (includes retries)
+  );
 }
 
 // UI State functions

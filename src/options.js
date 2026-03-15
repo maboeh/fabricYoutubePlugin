@@ -1,5 +1,6 @@
 // Options page JavaScript
-import { STORAGE_KEYS, DEFAULT_CONFIG } from './shared/constants.js';
+import { STORAGE_KEYS, DEFAULT_CONFIG, getStorage, setStorage } from './shared/constants.js';
+import { api } from './shared/browser-api.js';
 
 const elements = {
   apiBaseUrl: document.getElementById('api-base-url'),
@@ -25,18 +26,16 @@ elements.testConnectionBtn.addEventListener('click', testConnection);
 
 // Load settings from storage
 async function loadSettings() {
-  const settings = await new Promise((resolve) => {
-    chrome.storage.local.get([
-      STORAGE_KEYS.API_BASE_URL,
-      STORAGE_KEYS.API_ENDPOINT,
-      STORAGE_KEYS.API_KEY,
-      STORAGE_KEYS.AUTH_TYPE,
-      STORAGE_KEYS.DEFAULT_PARENT_ID,
-      STORAGE_KEYS.SHOW_FLOATING_BUTTON,
-      STORAGE_KEYS.SHOW_NOTIFICATIONS,
-      STORAGE_KEYS.AUTO_COPY_URL
-    ], resolve);
-  });
+  const settings = await getStorage([
+    STORAGE_KEYS.API_BASE_URL,
+    STORAGE_KEYS.API_ENDPOINT,
+    STORAGE_KEYS.API_KEY,
+    STORAGE_KEYS.AUTH_TYPE,
+    STORAGE_KEYS.DEFAULT_PARENT_ID,
+    STORAGE_KEYS.SHOW_FLOATING_BUTTON,
+    STORAGE_KEYS.SHOW_NOTIFICATIONS,
+    STORAGE_KEYS.AUTO_COPY_URL
+  ]);
 
   // Apply settings with defaults
   elements.apiBaseUrl.value = settings[STORAGE_KEYS.API_BASE_URL] || DEFAULT_CONFIG.apiUrl;
@@ -64,10 +63,7 @@ async function saveSettings() {
   };
 
   try {
-    await new Promise((resolve) => {
-      chrome.storage.local.set(settings, resolve);
-    });
-
+    await setStorage(settings);
     showMessage('success', 'Einstellungen erfolgreich gespeichert!');
   } catch (error) {
     showMessage('error', 'Fehler beim Speichern: ' + error.message);
@@ -83,18 +79,23 @@ async function testConnection() {
     return;
   }
 
-  // Save settings first so background uses current config
-  await saveSettings();
-
   elements.testConnectionBtn.textContent = 'Teste...';
   elements.testConnectionBtn.disabled = true;
 
   try {
+    // Save settings first so background uses current config
+    await saveSettings();
+
     const result = await new Promise((resolve) => {
-      chrome.runtime.sendMessage(
+      const timer = setTimeout(() => {
+        resolve({ valid: false, error: 'Zeitüberschreitung. Bitte Extension neu laden.' });
+      }, 15000);
+
+      api.runtime.sendMessage(
         { action: 'validateApiKey', apiKey },
         (response) => {
-          if (chrome.runtime.lastError) {
+          clearTimeout(timer);
+          if (api.runtime.lastError) {
             resolve({ valid: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
             return;
           }

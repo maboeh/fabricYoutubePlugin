@@ -9,6 +9,7 @@ import {
   sanitizeText,
   getStoredCredentials
 } from './shared/constants.js';
+import { api } from './shared/browser-api.js';
 
 // Retry configuration
 const RETRY_CONFIG = {
@@ -19,7 +20,7 @@ const RETRY_CONFIG = {
 };
 
 // Listen for keyboard shortcut
-chrome.commands.onCommand.addListener(async (command) => {
+api.commands.onCommand.addListener(async (command) => {
   if (command === 'save-to-fabric') {
     await handleSaveShortcut();
   }
@@ -29,7 +30,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 async function handleSaveShortcut() {
   try {
     // Get the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await api.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.url) {
       await showNotification('Fehler', 'Kein aktiver Tab gefunden');
@@ -53,7 +54,7 @@ async function handleSaveShortcut() {
     // Get video info from content script if possible
     let videoInfo;
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
+      const response = await api.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
       videoInfo = response.videoInfo;
     } catch (e) {
       // Fallback to basic info
@@ -100,12 +101,10 @@ let _settingsCache = null;
 let _settingsCacheTime = 0;
 const SETTINGS_CACHE_TTL = 30000; // 30 seconds
 
-// Invalidate settings cache when user changes settings
-chrome.storage.onChanged.addListener((changes, namespace) => {
+// Invalidate settings cache when any relevant setting changes
+api.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
-    if (changes[STORAGE_KEYS.SHOW_NOTIFICATIONS] || changes[STORAGE_KEYS.AUTO_COPY_URL]) {
-      _settingsCache = null;
-    }
+    _settingsCache = null;
   }
 });
 
@@ -155,7 +154,7 @@ function sleep(ms) {
 // Copy text to clipboard via content script (Service Worker can't use navigator.clipboard)
 async function copyToClipboard(text, tabId) {
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await api.scripting.executeScript({
       target: { tabId: tabId },
       func: async (textToCopy) => {
         try {
@@ -182,6 +181,9 @@ async function copyToClipboard(text, tabId) {
 
 // Save to Fabric API (v2) with retry logic
 async function saveToFabric(videoInfo, apiKey, retryCount = 0, config = null) {
+  if (!videoInfo || !videoInfo.url) {
+    return { success: false, error: 'Keine Video-URL vorhanden' };
+  }
   if (!config) config = await getStoredConfig();
 
   try {
@@ -245,12 +247,22 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0, config = null) {
       };
     }
 
-    const response = await fetch(`${config.apiUrl}${config.endpoint}`, {
-      method: 'POST',
-      headers: headers,
-      credentials: 'omit',
-      body: JSON.stringify(requestBody)
-    });
+    // Timeout for API calls (30 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response;
+    try {
+      response = await fetch(`${config.apiUrl}${config.endpoint}`, {
+        method: 'POST',
+        headers: headers,
+        credentials: 'omit',
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (response.ok) {
       const data = await response.json();
@@ -258,7 +270,7 @@ async function saveToFabric(videoInfo, apiKey, retryCount = 0, config = null) {
       return {
         success: true,
         bookmarkId,
-        bookmarkUrl: `${DEFAULT_CONFIG.baseUrl}/resources/${bookmarkId}`
+        bookmarkUrl: bookmarkId ? `${DEFAULT_CONFIG.baseUrl}/resources/${bookmarkId}` : null
       };
     }
 
@@ -340,8 +352,8 @@ async function showNotification(title, message) {
     return;
   }
 
-  if (chrome.notifications) {
-    chrome.notifications.create({
+  if (api.notifications) {
+    api.notifications.create({
       type: 'basic',
       iconUrl: 'icons/icon128.png',
       title: title,
@@ -351,7 +363,7 @@ async function showNotification(title, message) {
 }
 
 // Listen for messages from popup or content scripts
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'saveToFabric') {
     handleSaveShortcut()
       .then((result) => sendResponse(result))
@@ -422,7 +434,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       url === 'https://app.fabric.so' || url.startsWith('https://app.fabric.so/')
     );
     if (isFabricUrl) {
-      chrome.tabs.create({ url });
+      api.tabs.create({ url });
       sendResponse({ success: true });
     } else {
       console.warn('Blocked openInFabric with invalid URL:', url);
@@ -445,11 +457,20 @@ async function validateApiKey(apiKey) {
       headers['X-Api-Key'] = apiKey;
     }
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      credentials: 'omit'
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers,
+        credentials: 'omit',
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (response.ok) {
       return { valid: true };
@@ -468,8 +489,8 @@ async function validateApiKey(apiKey) {
 }
 
 // Context menu for right-click on YouTube pages
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
+api.runtime.onInstalled.addListener(() => {
+  api.contextMenus.create({
     id: 'save-to-fabric',
     title: 'In Fabric speichern',
     contexts: ['page', 'link'],
@@ -481,7 +502,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // Handle context menu click
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+api.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'save-to-fabric') {
     const url = info.linkUrl || info.pageUrl;
 

@@ -1,5 +1,6 @@
 // Shared constants for YouTube to Fabric Extension
 // This file is imported by background.js and popup.js (ES modules)
+import { api } from './browser-api.js';
 
 // Storage keys - use these instead of magic strings
 export const STORAGE_KEYS = {
@@ -56,9 +57,9 @@ export function isYouTubePlaylistUrl(url) {
 // Storage helper functions (Promise-based with error handling)
 export async function getStorage(keys) {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.get(keys, (result) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+    api.storage.local.get(keys, (result) => {
+      if (api.runtime.lastError) {
+        reject(new Error(api.runtime.lastError.message));
       } else {
         resolve(result);
       }
@@ -68,9 +69,9 @@ export async function getStorage(keys) {
 
 export async function setStorage(obj) {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.set(obj, (result) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+    api.storage.local.set(obj, (result) => {
+      if (api.runtime.lastError) {
+        reject(new Error(api.runtime.lastError.message));
       } else {
         resolve(result);
       }
@@ -80,9 +81,9 @@ export async function setStorage(obj) {
 
 export async function removeStorage(keys) {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.remove(keys, () => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+    api.storage.local.remove(keys, () => {
+      if (api.runtime.lastError) {
+        reject(new Error(api.runtime.lastError.message));
       } else {
         resolve();
       }

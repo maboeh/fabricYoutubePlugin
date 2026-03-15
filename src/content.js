@@ -2,15 +2,16 @@
 // Extracts video information from the YouTube page
 //
 // NOTE: Content Scripts cannot use ES6 modules.
-// This file uses chrome.* API directly. If a cross-browser polyfill
-// (shared/browser-api.js) is introduced, this file's API calls MUST
-// be updated to match. See also: shared/constants.js
+// Inline polyfill matching shared/browser-api.js logic.
 //
 // Storage keys used here MUST match shared/constants.js STORAGE_KEYS:
 //   - 'fabricShowFloatingButton' = STORAGE_KEYS.SHOW_FLOATING_BUTTON
 
 (function() {
   'use strict';
+
+  // Cross-browser API polyfill (inline version of shared/browser-api.js)
+  const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
 
   // Settings cache
   let settings = {
@@ -29,7 +30,7 @@
   // Load settings from storage
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
   function loadSettings() {
-    chrome.storage.local.get(['fabricShowFloatingButton'], (result) => {
+    api.storage.local.get(['fabricShowFloatingButton'], (result) => {
       settings.showFloatingButton = result.fabricShowFloatingButton !== false;
       updateFloatingButtonVisibility();
     });
@@ -43,7 +44,7 @@
       updateFloatingButtonVisibility();
     }
   }
-  chrome.storage.onChanged.addListener(onStorageChanged);
+  api.storage.onChanged.addListener(onStorageChanged);
 
   // Update floating button visibility based on settings
   function updateFloatingButtonVisibility() {
@@ -198,7 +199,7 @@
   }
 
   // Listen for messages from popup or background script
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  api.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getVideoInfo') {
       sendResponse({ videoInfo: getVideoInfo() });
     } else if (request.action === 'getPlaylistInfo') {
@@ -268,18 +269,23 @@
       }
 
       button.classList.add('saving');
+      button.setAttribute('aria-busy', 'true');
       button.querySelector('span').textContent = 'Speichern...';
 
       try {
         // Send videoInfo directly to avoid race condition with tab re-query
         const videoInfo = getVideoInfo();
-        const response = await chrome.runtime.sendMessage({
-          action: 'saveFromContentScript',
-          videoInfo: videoInfo
-        });
+        const response = await Promise.race([
+          api.runtime.sendMessage({
+            action: 'saveFromContentScript',
+            videoInfo: videoInfo
+          }),
+          new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'Zeitüberschreitung' }), 60000))
+        ]);
 
         if (response && response.success) {
           button.classList.remove('saving');
+          button.removeAttribute('aria-busy');
           button.classList.add('saved');
           button.querySelector('span').textContent = 'Gespeichert!';
 
@@ -295,6 +301,7 @@
         }
       } catch (error) {
         button.classList.remove('saving');
+        button.removeAttribute('aria-busy');
         button.classList.add('error');
         // Show short error hint if not logged in
         const isAuthError = error.message?.includes('angemeldet') || error.message?.includes('API');
@@ -335,7 +342,7 @@
     }
 
     // Remove storage listener
-    chrome.storage.onChanged.removeListener(onStorageChanged);
+    api.storage.onChanged.removeListener(onStorageChanged);
 
     // Clear all timers
     if (addButtonTimeout) {
