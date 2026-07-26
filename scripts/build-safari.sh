@@ -7,6 +7,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SRC_DIR="$PROJECT_DIR/src"
 PLATFORM_DIR="$PROJECT_DIR/platforms/safari"
 DIST_DIR="$PROJECT_DIR/dist/safari"
+BASE_MANIFEST="$PROJECT_DIR/platforms/base.manifest.json"
+PATCH_MANIFEST="$PLATFORM_DIR/manifest.patch.json"
 
 echo "Building Safari extension..."
 
@@ -21,7 +23,7 @@ if [ ! -d "$PLATFORM_DIR" ]; then
 fi
 
 # Validate critical files exist
-for file in manifest.json background.js popup.js popup.html content.js options.js options.html; do
+for file in background.js popup.js popup.html content.js options.js options.html; do
   if [ ! -f "$SRC_DIR/$file" ]; then
     echo "ERROR: Required file missing: $SRC_DIR/$file" >&2
     exit 1
@@ -35,11 +37,8 @@ for size in 16 32 48 128; do
   fi
 done
 
-# Validate manifest JSON syntax
 if ! command -v python3 &>/dev/null; then
-  echo "WARNING: python3 not found, skipping manifest JSON validation" >&2
-elif ! python3 -c "import json; json.load(open('$PLATFORM_DIR/manifest.json'))" 2>/dev/null; then
-  echo "ERROR: Invalid JSON in $PLATFORM_DIR/manifest.json" >&2
+  echo "ERROR: python3 is required to merge manifests" >&2
   exit 1
 fi
 
@@ -50,8 +49,11 @@ mkdir -p "$DIST_DIR"
 # Copy shared source files
 cp -R "$SRC_DIR/"* "$DIST_DIR/"
 
-# Overwrite with Safari-specific manifest and rules
-cp "$PLATFORM_DIR/manifest.json" "$DIST_DIR/manifest.json"
+# Merge base + safari patch + package.json version
+python3 "$SCRIPT_DIR/merge-manifest.py" "$BASE_MANIFEST" "$PATCH_MANIFEST" "$DIST_DIR/manifest.json"
+cp "$DIST_DIR/manifest.json" "$PLATFORM_DIR/manifest.json"
+
+# Rules: empty static set; dynamic DNR rules are registered in background.js
 cp "$PLATFORM_DIR/rules.json" "$DIST_DIR/rules.json"
 
 # Clean up non-extension files

@@ -2,6 +2,7 @@
 import {
   STORAGE_KEYS,
   DEFAULT_CONFIG,
+  TIMEOUTS,
   isYouTubeVideoUrl,
   isYouTubePlaylistUrl,
   extractVideoId,
@@ -12,6 +13,7 @@ import {
   getStoredCredentials
 } from './shared/constants.js';
 import { api } from './shared/browser-api.js';
+import { sendMessageWithTimeout } from './shared/messaging.js';
 
 // Runtime config (can be overridden by user settings)
 let config = { ...DEFAULT_CONFIG };
@@ -47,16 +49,24 @@ const elements = {
   noVideoSection: document.getElementById('no-video-section'),
   playlistSection: document.getElementById('playlist-section'),
   successMessage: document.getElementById('success-message'),
+  successText: document.getElementById('success-text'),
   errorMessage: document.getElementById('error-message'),
   errorText: document.getElementById('error-text'),
   loading: document.getElementById('loading'),
 
   apiKeyInput: document.getElementById('api-key'),
+  toggleApiKeyVisibility: document.getElementById('toggle-api-key-visibility'),
   saveCredentialsBtn: document.getElementById('save-credentials'),
   logoutBtn: document.getElementById('logout-btn'),
+  openOptionsBtn: document.getElementById('open-options'),
   saveToFabricBtn: document.getElementById('save-to-fabric'),
   openInFabricBtn: document.getElementById('open-in-fabric'),
   savePlaylistBtn: document.getElementById('save-playlist'),
+  playlistConfirm: document.getElementById('playlist-confirm'),
+  playlistConfirmText: document.getElementById('playlist-confirm-text'),
+  playlistConfirmYes: document.getElementById('playlist-confirm-yes'),
+  playlistConfirmNo: document.getElementById('playlist-confirm-no'),
+  shortcutHint: document.getElementById('shortcut-hint'),
 
   videoThumbnail: document.getElementById('video-thumbnail'),
   videoTitle: document.getElementById('video-title'),
@@ -67,10 +77,17 @@ const elements = {
 
   playlistTitle: document.getElementById('playlist-title'),
   playlistCount: document.getElementById('playlist-count'),
+  playlistHint: document.getElementById('playlist-hint'),
   playlistProgress: document.getElementById('playlist-progress'),
   progressFill: document.getElementById('progress-fill'),
   progressText: document.getElementById('progress-text')
 };
+
+const PLAYLIST_HINT_DEFAULT = 'Scrolle in der Playlist um mehr Videos zu laden';
+const PLAYLIST_HINT_EMPTY =
+  'Keine Videos geladen. Scrolle in der Playlist oder lade die Seite neu.';
+const PLAYLIST_HINT_RELOAD =
+  'Playlist erkannt — bitte die YouTube-Seite neu laden (F5), damit das Plugin die Videos lesen kann.';
 
 // State
 let currentVideoInfo = null;
@@ -84,7 +101,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkAuthStatus();
   await checkCurrentTab();
   setupEventListeners();
+  await updateShortcutHint();
 });
+
+/**
+ * Show the configured keyboard shortcut (user may have changed it in Chrome).
+ */
+async function updateShortcutHint() {
+  if (!elements.shortcutHint || !api.commands?.getAll) {
+    return;
+  }
+  try {
+    const commands = await api.commands.getAll();
+    const saveCommand = commands.find((c) => c.name === 'save-to-fabric');
+    if (!saveCommand?.shortcut) {
+      return;
+    }
+    const parts = saveCommand.shortcut.split('+').map((part) => part.trim()).filter(Boolean);
+    elements.shortcutHint.replaceChildren();
+    elements.shortcutHint.append('Tipp: Nutze ');
+    parts.forEach((label, index) => {
+      if (index > 0) {
+        elements.shortcutHint.append('+');
+      }
+      const kbd = document.createElement('kbd');
+      kbd.textContent = label;
+      elements.shortcutHint.appendChild(kbd);
+    });
+    elements.shortcutHint.append(' als Shortcut');
+  } catch (error) {
+    console.warn('Could not load shortcut hint:', error);
+  }
+}
 
 // Check if user is authenticated (caches credentials for later use)
 async function checkAuthStatus() {
@@ -119,65 +167,114 @@ async function clearCredentials() {
   }
 }
 
+function playlistFallbackFromTab(tab) {
+  return {
+    isPlaylist: true,
+    playlistId: null,
+    playlistTitle: tab.title?.replace(' - YouTube', '') || 'Playlist',
+    videos: [],
+    totalVideos: null,
+    visibleVideos: 0
+  };
+}
+
+function setPlaylistHint(text) {
+  if (elements.playlistHint) {
+    elements.playlistHint.textContent = text;
+  }
+}
+
+function applyPlaylistUi(info, { hint, canSave }) {
+  currentPlaylistInfo = info;
+  displayPlaylistInfo(info);
+  showPlaylistSection();
+  setPlaylistHint(hint);
+  if (elements.savePlaylistBtn) {
+    elements.savePlaylistBtn.disabled = !canSave;
+  }
+}
+
+async function loadPlaylistForTab(tab) {
+  try {
+    const response = await api.tabs.sendMessage(tab.id, { action: 'getPlaylistInfo' });
+    const info = response?.playlistInfo || playlistFallbackFromTab(tab);
+    if (!info.playlistTitle) {
+      info.playlistTitle = playlistFallbackFromTab(tab).playlistTitle;
+    }
+    const videoCount = info.videos?.length || 0;
+    applyPlaylistUi(info, {
+      hint: videoCount > 0 ? PLAYLIST_HINT_DEFAULT : PLAYLIST_HINT_EMPTY,
+      canSave: videoCount > 0
+    });
+  } catch (_e) {
+    // Content script missing (e.g. tab not reloaded after install)
+    applyPlaylistUi(playlistFallbackFromTab(tab), {
+      hint: PLAYLIST_HINT_RELOAD,
+      canSave: false
+    });
+  }
+}
+
+async function loadVideoForTab(tab) {
+  try {
+    const response = await api.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
+    if (response?.videoInfo) {
+      currentVideoInfo = response.videoInfo;
+      displayVideoInfo(currentVideoInfo);
+      showVideoSection();
+      return;
+    }
+  } catch (_e) {
+    // Content script might not be loaded — fall back to URL metadata
+  }
+
+  const videoId = extractVideoId(tab.url);
+  currentVideoInfo = {
+    url: tab.url,
+    title: tab.title?.replace(' - YouTube', '') || 'YouTube Video',
+    videoId: videoId,
+    channel: 'YouTube',
+    thumbnail: getThumbnailUrl(videoId)
+  };
+  displayVideoInfo(currentVideoInfo);
+  showVideoSection();
+}
+
 // Check current tab for YouTube video or playlist
 async function checkCurrentTab() {
   try {
     const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-
-    if (!tab || !tab.url) {
+    if (!tab?.url) {
       showNoVideo();
       return;
     }
 
-    // Check for playlist first
+    // Playlist URL: never fall through to "Kein YouTube Video"
     if (isYouTubePlaylistUrl(tab.url)) {
-      try {
-        const response = await api.tabs.sendMessage(tab.id, { action: 'getPlaylistInfo' });
-        if (response && response.playlistInfo && response.playlistInfo.videos.length > 0) {
-          currentPlaylistInfo = response.playlistInfo;
-          displayPlaylistInfo(currentPlaylistInfo);
-          showPlaylistSection();
-          return;
-        }
-      } catch (e) {
-        // Content script might not be loaded
-      }
+      await loadPlaylistForTab(tab);
+      return;
     }
 
-    // Check for video
     if (isYouTubeVideoUrl(tab.url)) {
-      // Try to get video info from content script
-      try {
-        const response = await api.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
-        if (response && response.videoInfo) {
-          currentVideoInfo = response.videoInfo;
-          displayVideoInfo(currentVideoInfo);
-          showVideoSection();
-          return;
-        }
-      } catch (e) {
-        // Content script might not be loaded, extract basic info from URL
-      }
-
-      // Fallback: Extract basic info from tab
-      const videoId = extractVideoId(tab.url);
-      currentVideoInfo = {
-        url: tab.url,
-        title: tab.title?.replace(' - YouTube', '') || 'YouTube Video',
-        videoId: videoId,
-        channel: 'YouTube',
-        thumbnail: getThumbnailUrl(videoId)
-      };
-
-      displayVideoInfo(currentVideoInfo);
-      showVideoSection();
-    } else {
-      showNoVideo();
+      await loadVideoForTab(tab);
+      return;
     }
+
+    showNoVideo();
   } catch (error) {
     console.error('Error checking current tab:', error);
     showNoVideo();
   }
+}
+
+function formatPlaylistCount(info) {
+  const videoCount = Array.isArray(info.videos) ? info.videos.length : 0;
+  const visible = info.visibleVideos == null ? videoCount : info.visibleVideos;
+  const total = info.totalVideos;
+  if (typeof total === 'number' && total > visible) {
+    return `${visible} von ${total} Videos geladen`;
+  }
+  return `${videoCount} Videos`;
 }
 
 // Display playlist information
@@ -186,12 +283,7 @@ function displayPlaylistInfo(info) {
     elements.playlistTitle.textContent = info.playlistTitle || 'Unbekannte Playlist';
   }
   if (elements.playlistCount) {
-    // Show visible vs total if we know the total
-    if (info.totalVideos && info.totalVideos > info.visibleVideos) {
-      elements.playlistCount.textContent = `${info.visibleVideos} von ${info.totalVideos} Videos geladen`;
-    } else {
-      elements.playlistCount.textContent = `${info.videos.length} Videos`;
-    }
+    elements.playlistCount.textContent = formatPlaylistCount(info);
   }
 }
 
@@ -206,6 +298,14 @@ function displayVideoInfo(info) {
 
   if (elements.videoThumbnail) {
     if (info.thumbnail) {
+      elements.videoThumbnail.onerror = () => {
+        if (info.videoId) {
+          elements.videoThumbnail.onerror = null;
+          elements.videoThumbnail.src = getThumbnailUrl(info.videoId, 'mqdefault');
+        } else {
+          elements.videoThumbnail.style.display = 'none';
+        }
+      };
       elements.videoThumbnail.src = info.thumbnail;
       elements.videoThumbnail.alt = info.title ? `Thumbnail: ${info.title}` : 'Video Thumbnail';
       elements.videoThumbnail.style.display = 'block';
@@ -221,14 +321,43 @@ function setupEventListeners() {
   elements.logoutBtn.addEventListener('click', handleLogout);
   elements.saveToFabricBtn.addEventListener('click', handleSaveToFabric);
 
+  if (elements.openOptionsBtn) {
+    elements.openOptionsBtn.addEventListener('click', () => {
+      if (api.runtime.openOptionsPage) {
+        api.runtime.openOptionsPage();
+      }
+    });
+  }
+
+  if (elements.toggleApiKeyVisibility) {
+    elements.toggleApiKeyVisibility.addEventListener('click', () => {
+      const isPassword = elements.apiKeyInput.type === 'password';
+      elements.apiKeyInput.type = isPassword ? 'text' : 'password';
+      elements.toggleApiKeyVisibility.textContent = isPassword ? 'Verbergen' : 'Anzeigen';
+      elements.toggleApiKeyVisibility.setAttribute(
+        'aria-label',
+        isPassword ? 'API Key verbergen' : 'API Key anzeigen'
+      );
+    });
+  }
+
   // Open in Fabric button
   if (elements.openInFabricBtn) {
     elements.openInFabricBtn.addEventListener('click', handleOpenInFabric);
   }
 
-  // Save playlist button
+  // Save playlist button — shows inline confirmation first
   if (elements.savePlaylistBtn) {
-    elements.savePlaylistBtn.addEventListener('click', handleSavePlaylist);
+    elements.savePlaylistBtn.addEventListener('click', showPlaylistConfirm);
+  }
+  if (elements.playlistConfirmYes) {
+    elements.playlistConfirmYes.addEventListener('click', () => {
+      hidePlaylistConfirm();
+      handleSavePlaylist();
+    });
+  }
+  if (elements.playlistConfirmNo) {
+    elements.playlistConfirmNo.addEventListener('click', hidePlaylistConfirm);
   }
 
   // Enter key on API key input
@@ -245,38 +374,37 @@ function setupEventListeners() {
     });
   });
 
-  // Escape key closes visible messages
+  // Escape key closes visible messages / playlist confirm
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       hideMessages();
+      hidePlaylistConfirm();
     }
   });
 }
 
-// Send message to background script with timeout
-function sendMessageWithTimeout(message, timeoutMs = 10000) {
-  return new Promise((resolve) => {
-    const timeoutError = 'Zeitüberschreitung. Bitte Extension neu laden.';
-    const unreachableError = 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.';
+function showPlaylistConfirm() {
+  if (!currentPlaylistInfo || !currentPlaylistInfo.videos.length) {
+    showError('Keine Playlist zum Speichern');
+    return;
+  }
+  const videoCount = currentPlaylistInfo.videos.length;
+  if (elements.playlistConfirmText) {
+    elements.playlistConfirmText.textContent = `${videoCount} Videos in Fabric speichern?`;
+  }
+  elements.playlistConfirm?.classList.remove('hidden');
+  elements.savePlaylistBtn?.classList.add('hidden');
+  elements.playlistConfirmYes?.focus();
+}
 
-    const timer = setTimeout(() => {
-      resolve({ success: false, valid: false, error: timeoutError });
-    }, timeoutMs);
-
-    api.runtime.sendMessage(message, (response) => {
-      clearTimeout(timer);
-      if (api.runtime.lastError) {
-        resolve({ success: false, valid: false, error: unreachableError });
-        return;
-      }
-      resolve(response || { success: false, valid: false, error: 'Keine Antwort vom Background Script' });
-    });
-  });
+function hidePlaylistConfirm() {
+  elements.playlistConfirm?.classList.add('hidden');
+  elements.savePlaylistBtn?.classList.remove('hidden');
 }
 
 // Validate API key via background script (avoids CORS issues)
 async function validateApiKey(apiKey) {
-  return sendMessageWithTimeout({ action: 'validateApiKey', apiKey });
+  return sendMessageWithTimeout({ action: 'validateApiKey', apiKey }, TIMEOUTS.VALIDATE_API_KEY_MS);
 }
 
 // Handle saving credentials
@@ -312,6 +440,13 @@ async function handleSaveCredentials() {
 
     // Re-check current tab after login
     await checkCurrentTab();
+
+    // Move focus to the primary action for keyboard / screen-reader users
+    if (!elements.videoSection.classList.contains('hidden')) {
+      elements.saveToFabricBtn?.focus();
+    } else if (!elements.playlistSection?.classList.contains('hidden')) {
+      elements.savePlaylistBtn?.focus();
+    }
   } finally {
     elements.saveCredentialsBtn.disabled = false;
     elements.saveCredentialsBtn.textContent = 'Anmelden';
@@ -355,7 +490,7 @@ async function handleSaveToFabric() {
   }
 
   try {
-    const result = await saveToFabric(videoInfoWithExtras, credentials.apiKey);
+    const result = await saveToFabric(videoInfoWithExtras);
     hideLoading();
 
     if (result.success) {
@@ -395,11 +530,6 @@ async function handleSavePlaylist() {
 
   const videoCount = currentPlaylistInfo.videos.length;
 
-  // Confirmation before bulk save
-  if (!confirm(`${videoCount} Videos in Fabric speichern?`)) {
-    return;
-  }
-
   const credentials = await getCachedCredentials();
 
   if (!credentials || !credentials.apiKey) {
@@ -420,7 +550,7 @@ async function handleSavePlaylist() {
       const video = currentPlaylistInfo.videos[i];
       showPlaylistProgress(i, videoCount, video.title || `Video ${i + 1}`);
 
-      const result = await saveToFabric(video, credentials.apiKey);
+      const result = await saveToFabric(video);
 
       // Delay between saves to avoid API rate limiting
       if (i < videoCount - 1) {
@@ -469,11 +599,11 @@ async function handleSavePlaylist() {
   }
 }
 
-// Save to Fabric via background script (avoids CORS issues)
-async function saveToFabric(videoInfo, apiKey) {
+// Save to Fabric via background script (avoids CORS issues; API key stays in background)
+async function saveToFabric(videoInfo) {
   return sendMessageWithTimeout(
-    { action: 'saveVideoToFabric', videoInfo, apiKey },
-    60000 // 60s timeout for save operations (includes retries)
+    { action: 'saveVideoToFabric', videoInfo },
+    TIMEOUTS.MESSAGE_SAVE_MS
   );
 }
 
@@ -547,7 +677,9 @@ let _successTimer = null;
 let _errorTimer = null;
 
 function showSuccess(message = 'Video erfolgreich in Fabric gespeichert!') {
-  elements.successMessage.querySelector('span:nth-of-type(2)').textContent = message;
+  if (elements.successText) {
+    elements.successText.textContent = message;
+  }
   elements.successMessage.classList.remove('hidden');
 
   if (_successTimer) clearTimeout(_successTimer);
@@ -604,4 +736,5 @@ function hideAllSections() {
   elements.loggedInSection.classList.add('hidden');
   elements.videoSection.classList.add('hidden');
   elements.noVideoSection.classList.add('hidden');
+  elements.playlistSection?.classList.add('hidden');
 }

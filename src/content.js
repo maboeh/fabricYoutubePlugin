@@ -33,15 +33,19 @@
   let playerCheckCount = 0;
   let buttonResetTimer = null;
   let _onNavigateHandler = null;
+  let _initialized = false;
   const PLAYER_CHECK_MAX = 5;
   const PLAYER_CHECK_INTERVAL = 300; // ms
 
-  // Load settings from storage
+  // Load settings from storage, then run callback (avoids floating-button flash)
   // Key must match STORAGE_KEYS.SHOW_FLOATING_BUTTON in shared/constants.js
-  function loadSettings() {
+  function loadSettings(onReady) {
     api.storage.local.get([STORAGE_KEY_FLOATING_BUTTON], (result) => {
       settings.showFloatingButton = result[STORAGE_KEY_FLOATING_BUTTON] !== false;
       updateFloatingButtonVisibility();
+      if (typeof onReady === 'function') {
+        onReady();
+      }
     });
   }
 
@@ -110,9 +114,9 @@
         info.channel = channelElement.textContent?.trim();
       }
 
-      // Get thumbnail
+      // Get thumbnail (hqdefault is more reliable than maxresdefault)
       if (info.videoId) {
-        info.thumbnail = `https://img.youtube.com/vi/${info.videoId}/maxresdefault.jpg`;
+        info.thumbnail = `https://img.youtube.com/vi/${info.videoId}/hqdefault.jpg`;
       }
 
       // Get description (first 200 characters)
@@ -141,6 +145,136 @@
     return window.location.pathname === '/playlist';
   }
 
+  function extractVideoIdFromHref(href) {
+    if (!href) return null;
+    const match = href.match(/[?&]v=([A-Za-z0-9_-]{11})/);
+    return match ? match[1] : null;
+  }
+
+  function cleanWatchUrl(href) {
+    try {
+      const url = new URL(href, window.location.origin);
+      const videoId = url.searchParams.get('v');
+      if (!videoId) return href.split('&list=')[0];
+      return `https://www.youtube.com/watch?v=${videoId}`;
+    } catch {
+      return href.split('&list=')[0];
+    }
+  }
+
+  function pushUniquePlaylistVideo(videos, seen, entry) {
+    if (!entry.videoId || seen.has(entry.videoId)) {
+      return;
+    }
+    seen.add(entry.videoId);
+    videos.push(entry);
+  }
+
+  function queryFirstText(selectors) {
+    for (const selector of selectors) {
+      const text = document.querySelector(selector)?.textContent?.trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  function parsePlaylistTotalVideos() {
+    const statsText = queryFirstText([
+      'yt-formatted-string.ytd-playlist-sidebar-primary-info-renderer',
+      '.metadata-stats',
+      '.yt-content-metadata-view-model__metadata-row'
+    ]);
+    if (!statsText) return null;
+    const countMatch = statsText.match(/(\d+)\s*(videos?|Videos?)/i);
+    return countMatch ? parseInt(countMatch[1], 10) : null;
+  }
+
+  function buildPlaylistVideoEntry(href, title, channel, index) {
+    const videoId = extractVideoIdFromHref(href);
+    return {
+      url: cleanWatchUrl(href),
+      title: title || `Video ${index + 1}`,
+      videoId,
+      channel: channel || 'YouTube',
+      thumbnail: videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null
+    };
+  }
+
+  function scrapeLegacyPlaylistVideos(videos, seen) {
+    document.querySelectorAll('ytd-playlist-video-renderer').forEach((element, index) => {
+      const linkElement = element.querySelector('a#video-title');
+      if (!linkElement?.href) return;
+      const channel =
+        element.querySelector('ytd-channel-name a')?.textContent?.trim() ||
+        element.querySelector('.ytd-channel-name')?.textContent?.trim();
+      pushUniquePlaylistVideo(
+        videos,
+        seen,
+        buildPlaylistVideoEntry(
+          linkElement.href,
+          linkElement.textContent?.trim(),
+          channel,
+          index
+        )
+      );
+    });
+  }
+
+  function queryChildText(root, selectors) {
+    for (const selector of selectors) {
+      const text = root.querySelector(selector)?.textContent?.trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  function scrapeOneLockup(element, index, videos, seen) {
+    const link = element.querySelector('a[href*="watch?v="]');
+    if (!link?.href) return;
+    const title = queryChildText(element, [
+      '.yt-lockup-metadata-view-model__title',
+      '.ytLockupMetadataViewModelTitle',
+      'a[href*="watch?v="] span'
+    ]) || link.textContent?.trim();
+    const channel = queryChildText(element, [
+      '.yt-content-metadata-view-model__metadata-text',
+      '.ytContentMetadataViewModelMetadataText'
+    ]);
+    pushUniquePlaylistVideo(
+      videos,
+      seen,
+      buildPlaylistVideoEntry(link.href, title, channel, index)
+    );
+  }
+
+  function scrapeLockupPlaylistVideos(videos, seen) {
+    const lockups = document.querySelectorAll(
+      'yt-lockup-view-model, .ytLockupViewModelHost, ytd-rich-item-renderer yt-lockup-view-model'
+    );
+    lockups.forEach((element, index) => {
+      scrapeOneLockup(element, index, videos, seen);
+    });
+  }
+
+  /** Last-resort: any watch links in the playlist contents area. */
+  function scrapeFallbackWatchLinks(videos, seen) {
+    if (videos.length > 0) return;
+
+    const container =
+      document.querySelector('ytd-playlist-video-list-renderer') ||
+      document.querySelector('#contents.ytd-section-list-renderer') ||
+      document.querySelector('ytd-section-list-renderer') ||
+      document.body;
+
+    container.querySelectorAll('a[href*="watch?v="]').forEach((link, index) => {
+      pushUniquePlaylistVideo(
+        videos,
+        seen,
+        buildPlaylistVideoEntry(link.href, link.textContent?.trim(), 'YouTube', index)
+      );
+    });
+  }
+
   // Get playlist information
   function getPlaylistInfo() {
     const info = {
@@ -148,58 +282,29 @@
       playlistId: null,
       playlistTitle: null,
       videos: [],
-      totalVideos: null,  // Total videos in playlist (if available)
-      visibleVideos: 0    // Currently loaded/visible videos
+      totalVideos: null,
+      visibleVideos: 0
     };
 
     if (!info.isPlaylist) return info;
 
     try {
-      // Get playlist ID
-      const urlParams = new URLSearchParams(window.location.search);
-      info.playlistId = urlParams.get('list');
+      info.playlistId = new URLSearchParams(window.location.search).get('list');
+      info.playlistTitle = queryFirstText([
+        'h1#title a.yt-simple-endpoint',
+        'yt-formatted-string.ytd-playlist-header-renderer',
+        'h1.ytd-playlist-header-renderer',
+        '#page-header h1',
+        'yt-dynamic-text-view-model',
+        'h1.dynamicTextViewModelH1'
+      ]);
+      info.totalVideos = parsePlaylistTotalVideos();
 
-      // Get playlist title
-      const titleElement = document.querySelector('h1#title a.yt-simple-endpoint') ||
-                           document.querySelector('yt-formatted-string.ytd-playlist-header-renderer') ||
-                           document.querySelector('h1.ytd-playlist-header-renderer');
-      if (titleElement) {
-        info.playlistTitle = titleElement.textContent?.trim();
-      }
-
-      // Try to get total video count from header
-      const statsElement = document.querySelector('yt-formatted-string.ytd-playlist-sidebar-primary-info-renderer') ||
-                           document.querySelector('.metadata-stats');
-      if (statsElement) {
-        const statsText = statsElement.textContent;
-        const countMatch = statsText.match(/(\d+)\s*(videos?|Videos?)/i);
-        if (countMatch) {
-          info.totalVideos = parseInt(countMatch[1]);
-        }
-      }
-
-      // Get all video links in the playlist (only currently loaded/visible ones)
-      const videoElements = document.querySelectorAll('ytd-playlist-video-renderer');
-      info.visibleVideos = videoElements.length;
-
-      videoElements.forEach((element, index) => {
-        const linkElement = element.querySelector('a#video-title');
-        const channelElement = element.querySelector('ytd-channel-name a') ||
-                               element.querySelector('.ytd-channel-name');
-
-        if (linkElement) {
-          const href = linkElement.href;
-          const videoIdMatch = href.match(/[?&]v=([A-Za-z0-9_-]{11})/);
-
-          info.videos.push({
-            url: href.split('&list=')[0], // Clean URL without playlist param
-            title: linkElement.textContent?.trim() || `Video ${index + 1}`,
-            videoId: videoIdMatch ? videoIdMatch[1] : null,
-            channel: channelElement?.textContent?.trim() || 'YouTube',
-            thumbnail: videoIdMatch ? `https://img.youtube.com/vi/${videoIdMatch[1]}/mqdefault.jpg` : null
-          });
-        }
-      });
+      const seen = new Set();
+      scrapeLegacyPlaylistVideos(info.videos, seen);
+      scrapeLockupPlaylistVideos(info.videos, seen);
+      scrapeFallbackWatchLinks(info.videos, seen);
+      info.visibleVideos = info.videos.length;
     } catch (error) {
       console.error('Error extracting playlist info:', error);
     }
@@ -368,6 +473,7 @@
     }
 
     removeFloatingSaveButton();
+    _initialized = false;
   }
 
   // Player detection via bounded polling (replaces MutationObserver subtree watching)
@@ -433,18 +539,43 @@
     if (!addFloatingSaveButton()) {
       startPlayerCheck();
     }
+
+    _initialized = true;
   }
 
-  // Cleanup on page unload (prevents memory leaks)
-  window.addEventListener('beforeunload', cleanup);
-  window.addEventListener('unload', cleanup);
+  // Only tear down on real navigation away — not when entering bfcache
+  window.addEventListener('pagehide', (event) => {
+    if (!event.persisted) {
+      cleanup();
+    }
+  });
 
-  // Start
-  loadSettings(); // Load settings first
+  // Re-init after bfcache restore if a previous cleanup ran (or listeners were lost)
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted && !_initialized) {
+      // Storage listener may have been removed — re-attach before start
+      api.storage.onChanged.addListener(onStorageChanged);
+      start();
+    }
+  });
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  // Start: wait for settings before init so the floating button does not flash.
+  // Idempotent: skip if already initialized (e.g. duplicate pageshow).
+  function start() {
+    if (_initialized) {
+      return;
+    }
+    loadSettings(() => {
+      if (_initialized) {
+        return;
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+      } else {
+        init();
+      }
+    });
   }
+
+  start();
 })();

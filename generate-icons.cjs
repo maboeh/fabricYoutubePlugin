@@ -5,7 +5,7 @@
  * This script generates placeholder PNG icons.
  * For production, replace these with properly designed icons.
  *
- * Run: node generate-icons.js
+ * Run: node generate-icons.cjs
  */
 
 const fs = require('fs');

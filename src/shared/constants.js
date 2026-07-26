@@ -23,6 +23,21 @@ export const DEFAULT_CONFIG = {
   defaultParentId: '@alias::inbox'  // Saves to Inbox by default
 };
 
+// Shared timeout / retry budgets (keep worst-case under MESSAGE_SAVE_MS)
+export const TIMEOUTS = {
+  SETTINGS_CACHE_TTL_MS: 30000,
+  VALIDATE_API_KEY_MS: 15000,
+  FETCH_MS: 15000,
+  MESSAGE_DEFAULT_MS: 10000,
+  MESSAGE_SAVE_MS: 60000,
+  // Must stay under MESSAGE_SAVE_MS so popup timeout cannot leave a lingering save
+  SAVE_BUDGET_MS: 50000,
+  RATE_LIMIT_DELAY_MS: 5000,
+  RETRY_DELAY_MS: 1000,
+  RETRY_BACKOFF: 2,
+  MAX_RETRIES: 1
+};
+
 // API Auth types
 export const AUTH_TYPES = {
   API_KEY: 'apikey',   // X-Api-Key header
@@ -139,6 +154,8 @@ export function getThumbnailUrl(videoId, quality = 'mqdefault') {
 // Sanitize text for API submission: strip control characters, trim
 export function sanitizeText(text, maxLength = 0) {
   if (!text) return text;
+  // Intentionally strip ASCII/C0/C1 control characters from API-bound strings
+  // eslint-disable-next-line no-control-regex -- sanitizing control chars is the point
   let clean = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
   clean = clean.trim();
   if (maxLength > 0 && clean.length > maxLength) {

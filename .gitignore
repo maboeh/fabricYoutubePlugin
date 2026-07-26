@@ -23,7 +23,6 @@ Thumbs.db
 *.log
 
 # Package manager files
-package-lock.json
 yarn.lock
 
 # Chrome metadata (auto-generated)
@@ -31,3 +30,14 @@ _metadata/
 
 # Git worktrees
 .worktrees/
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc
+
+# Playwright
+playwright-report/
+test-results/
+.pw-user-data*/
+
+# Local Codacy CLI install/cache (not needed to run the extension)
+.codacy/

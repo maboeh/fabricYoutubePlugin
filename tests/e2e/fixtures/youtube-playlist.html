@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fixture Playlist - YouTube</title>
+</head>
+<body>
+  <h1 id="title"><a class="yt-simple-endpoint">Fixture Playlist Title</a></h1>
+  <yt-formatted-string class="ytd-playlist-sidebar-primary-info-renderer">4 Videos</yt-formatted-string>
+
+  <!-- Legacy playlist rows -->
+  <ytd-playlist-video-renderer>
+    <a id="video-title" href="https://www.youtube.com/watch?v=aaaaaaaaaaa&amp;list=PLtest">Playlist Video 1</a>
+    <ytd-channel-name><a>Channel A</a></ytd-channel-name>
+  </ytd-playlist-video-renderer>
+  <ytd-playlist-video-renderer>
+    <a id="video-title" href="https://www.youtube.com/watch?v=bbbbbbbbbbb&amp;list=PLtest">Playlist Video 2</a>
+    <ytd-channel-name><a>Channel B</a></ytd-channel-name>
+  </ytd-playlist-video-renderer>
+
+  <!-- Modern lockup entries (YouTube 2025+). Duplicate of Video 1 tests dedup. -->
+  <yt-lockup-view-model>
+    <a href="https://www.youtube.com/watch?v=aaaaaaaaaaa&amp;list=PLtest">
+      <span class="yt-lockup-metadata-view-model__title">Playlist Video 1 Lockup Dup</span>
+    </a>
+    <span class="yt-content-metadata-view-model__metadata-text">Channel A</span>
+  </yt-lockup-view-model>
+  <yt-lockup-view-model>
+    <a href="https://www.youtube.com/watch?v=ccccccccccc&amp;list=PLtest">
+      <span class="yt-lockup-metadata-view-model__title">Playlist Video 3 Lockup</span>
+    </a>
+    <span class="yt-content-metadata-view-model__metadata-text">Channel C</span>
+  </yt-lockup-view-model>
+</body>
+</html>

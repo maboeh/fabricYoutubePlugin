@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projektbeschreibung
 
-Cross-Browser Extension (Manifest V3) zum Speichern von YouTube-Videos als Bookmarks in Fabric.so. Unterstützt Chrome und Safari (macOS). Keine Build-Tools oder Paketmanager erforderlich - ES6 Module mit einfachen Shell-Scripts für Builds.
+Cross-Browser Extension (Manifest V3) zum Speichern von YouTube-Videos als Bookmarks in Fabric.so. Unterstützt Chrome und Safari (macOS). Builds über Shell-Scripts; Unit-Tests (Vitest) und ESLint sind optional für Qualitätssicherung.
 
 ## Projektstruktur
 
@@ -15,19 +15,23 @@ fabricYoutubePlugin/
 │   ├── content.js          ← Content Script (kein Module, IIFE)
 │   ├── popup.js/html/css   ← Extension Popup
 │   ├── options.js/html     ← Einstellungsseite
-│   ├── manifest.json       ← Chrome-Manifest (für direktes Laden aus src/)
-│   ├── rules.json          ← Chrome DNR-Regeln
+│   ├── manifest.json       ← Generiert aus base + chrome-patch (Dev: src/ laden)
+│   ├── rules.json          ← Statische DNR-Regeln (leer; dynamisch in background.js)
 │   ├── shared/
 │   │   ├── browser-api.js  ← Cross-Browser Polyfill (chrome.* / browser.*)
-│   │   └── constants.js    ← Gemeinsame Konstanten
+│   │   ├── constants.js    ← Gemeinsame Konstanten + Timeout-Budgets
+│   │   └── messaging.js    ← sendMessageWithTimeout für Popup/Options
 │   └── icons/
 ├── platforms/
-│   ├── chrome/             ← Chrome-spezifisches Manifest + Rules
-│   └── safari/             ← Safari-spezifisches Manifest + Rules
+│   ├── base.manifest.json  ← Quelle der Wahrheit für Manifeste
+│   ├── chrome/             ← manifest.patch.json + rules.json
+│   └── safari/             ← manifest.patch.json + rules.json
 ├── safari-app/             ← Xcode-Projekt (generiert)
 ├── scripts/
+│   ├── merge-manifest.py   ← base + patch + package.json version
 │   ├── build-chrome.sh     ← Build → dist/chrome/
 │   └── build-safari.sh     ← Build → dist/safari/ + Xcode-Sync
+├── tests/                  ← Vitest Unit-Tests
 └── dist/                   ← Build-Ausgabe (gitignored)
 ```
 
@@ -44,10 +48,14 @@ fabricYoutubePlugin/
 3. `Cmd+R` → App starten → Extension in Safari aktivieren (Einstellungen > Erweiterungen)
 
 ### Build-Commands
-- `npm run build:chrome` – Chrome-Build nach dist/chrome/
+- `npm run build:chrome` – Chrome-Build nach dist/chrome/ (merged Manifest)
 - `npm run build:safari` – Safari-Build nach dist/safari/ + Xcode-Sync
 - `npm run build` – Beide Builds
 - `npm run xcode` – Xcode-Projekt öffnen
+- `npm test` – Vitest Unit-Tests (`tests/unit`)
+- `npm run lint` – ESLint
+- `npm run test:e2e` – Playwright Extension-Tests gegen Fixture + Mock-API (ohne `@smoke`)
+- `npm run test:e2e:smoke` – optionaler Smoke gegen echtes youtube.com
 
 ### Debugging
 - Chrome Service Worker: "Service Worker" Link in chrome://extensions/
@@ -55,6 +63,14 @@ fabricYoutubePlugin/
 - Chrome Popup: Rechtsklick auf Popup → Untersuchen
 - Safari Extension: Entwickler > Web Extension Hintergrundinhalt
 - Safari Content Script: Entwickler > YouTube > Web Inspector
+
+### Manuelle Safari-Checkliste (nicht durch Playwright abgedeckt)
+Safari-WebExtensions lassen sich mit Playwright nicht laden. Nach einem Safari-Build bitte prüfen:
+1. Extension in Safari aktivieren und auf einem YouTube-Watch-Tab den Floating-Button sehen
+2. Video über Floating-Button speichern (gültiger API Key hinterlegt)
+3. Popup öffnen: Login, Speichern, Einstellungen-Link
+4. Browser neu starten → Rechtsklick-Kontextmenü „In Fabric speichern“ ist noch vorhanden (`onStartup`-Recreate)
+5. Desktop-Notification erscheint (falls in den Optionen aktiv) und ersetzt die vorherige „Speichern…“-Meldung
 
 ## Architektur
 
@@ -65,6 +81,7 @@ fabricYoutubePlugin/
 └─────────────┘                                    └──────────────┘
        │                                                  │
        │    shared/browser-api.js + shared/constants.js   │
+       │    + shared/messaging.js                         │
        └──────────────────────┬───────────────────────────┘
                               │
                               │ api.tabs.sendMessage
@@ -81,7 +98,7 @@ Alle JS-Dateien nutzen `api.*` statt `chrome.*`. Der Polyfill in `shared/browser
 - **Chrome**: `api` = `chrome` (da `browser` undefined)
 - **Safari**: `api` = `browser` (W3C WebExtensions Standard)
 
-`content.js` kann keine ES6-Module importieren und enthält den Polyfill inline.
+`content.js` kann keine ES6-Module importieren und enthält denselben Polyfill **inline** (muss bei Änderungen an `shared/browser-api.js` manuell synchron gehalten werden).
 
 ### Hauptkomponenten
 
@@ -90,43 +107,50 @@ Alle JS-Dateien nutzen `api.*` statt `chrome.*`. Der Polyfill in `shared/browser
 
 **shared/constants.js** - Gemeinsame Konstanten und Hilfsfunktionen
 - `STORAGE_KEYS` - Storage Schlüssel
-- `DEFAULT_CONFIG` - API-Konfiguration
+- `DEFAULT_CONFIG` / `TIMEOUTS` - API- und Timeout-Konfiguration
 - `getStorage()`, `setStorage()`, `removeStorage()` - Storage-Helpers mit lastError-Checks
 - `getStoredCredentials()` - Credentials aus Storage laden
 - `sanitizeText()` - Input-Sanitierung für API-Strings
 - `isYouTubeVideoUrl()`, `extractVideoId()`, `getThumbnailUrl()`
 
+**shared/messaging.js** - Message-Helper für Popup/Options
+- `sendMessageWithTimeout()` – Background-Kommunikation mit Timeout + lastError-Handling
+
 **background.js** - Service Worker (ES6 Module)
 - Keyboard Shortcut Handler (`Alt+Shift+F`)
-- Kontextmenü mit Safari-Bug-Workaround (onStartup-Recreation)
-- Fabric API Aufrufe mit Retry-Logik
-- Notifications mit Graceful Degradation
-- Clipboard mit execCommand-Fallback
+- Kontextmenü: `removeAll` + `create`, Recreate bei `onInstalled` und `onStartup` (Safari)
+- Dynamische DNR-Regel (`tabIds: [-1]`) entfernt Origin nur bei Extension-Requests
+- Fabric API Aufrufe mit Retry-Logik (`buildRequestBody` / `postBookmark` / `withRetry`)
+- Notifications mit fester ID `fabric-save` (ersetzt statt stapeln)
+- Clipboard via `api.scripting.executeScript`
 - Settings-Cache mit 30s TTL + onChanged-Invalidierung
 
 **content.js** - Content Script (nur YouTube, KEIN Module)
 - Video-Metadaten aus DOM extrahieren (Titel, Channel, Thumbnail)
-- Floating "Fabric"-Button (respektiert User-Settings)
+- Floating "Fabric"-Button (respektiert User-Settings; init nach Storage-Load)
 - `yt-navigate-finish` Event für YouTube SPA-Navigation + bounded Polling für Player-Erkennung
 - Sendet `saveFromContentScript` mit videoInfo direkt (vermeidet Race Condition)
+- Cleanup über `pagehide` (bfcache-freundlich)
 
 **popup.js** - Extension Popup (ES6 Module)
 - API-Key Verwaltung und Validierung
 - Video/Playlist anzeigen und speichern
 - Custom Tags und Notizen
-- Playlist-Fortschrittsbalken mit Circuit Breaker
+- Playlist-Fortschrittsbalken mit Circuit Breaker + Inline-Bestätigung
+- Dark Mode via `prefers-color-scheme`
 
 **options.js** - Einstellungsseite (ES6 Module)
-- API-Konfiguration und Verbindungstest (via Background-Script)
+- API-Konfiguration und Verbindungstest (via Background-Script, ohne Speichern)
 - Feature-Toggles
-- Konfigurierbarer Ziel-Ordner
+- Konfigurierbarer Ziel-Ordner + URL-Validierung (https, kein Trailing Slash)
 
 ### Plattform-Unterschiede
 
 | Feature | Chrome | Safari |
 |---------|--------|--------|
-| DNR-Regel | urlFilter | regexFilter |
-| Kontextmenü | Stabil | Bug: Verschwindet nach Neustart |
+| Manifest | base + chrome patch | base + safari patch |
+| DNR | Dynamisch, `urlFilter` + `tabIds: [-1]` | Dynamisch (gleiche Regel) |
+| Kontextmenü | Stabil | Recreate via `onStartup` |
 | Notifications | Voll unterstützt | Eingeschränkt, try/catch |
 | Clipboard | navigator.clipboard | + execCommand Fallback |
 | Keyboard Shortcuts | User-anpassbar | Fest (Alt+Shift+F) |
@@ -176,7 +200,8 @@ X-Api-Key: <api-key>
 - Content Scripts können keine ES6 Module importieren — `content.js` ist eigenständig und enthält einen Inline-Polyfill. Bei Änderungen an `shared/browser-api.js` muss `content.js` manuell angepasst werden.
 - Service Worker hat keinen Zugriff auf `navigator.clipboard` — nutzt `api.scripting.executeScript`
 - YouTube ist eine SPA — `yt-navigate-finish` Custom Event für Navigation-Erkennung, `popstate` als Fallback für Browser-Back/Forward
-- DNR-Regel (`rules.json`) entfernt den `Origin`-Header bei Requests an `api.fabric.so` — bewusster Workaround für CORS-Einschränkungen der Fabric API. Chrome nutzt `urlFilter` (performanter), Safari benötigt `regexFilter`.
+- DNR: Session-Regel in `background.js` (`updateSessionRules`) entfernt den `Origin`-Header nur bei Extension-Requests (`tabIds: [-1]`). Dynamische Regeln unterstützen `tabIds` nicht. Die statischen `rules.json` sind leer; die Session-Regel wird bei `onInstalled`/`onStartup` neu gesetzt.
+- Manifeste werden aus `platforms/base.manifest.json` + Plattform-Patch generiert; Version kommt aus `package.json`.
 - API-Strings (Titel, Channel, Beschreibung) werden vor dem Versand über `sanitizeText()` bereinigt
 - `validateApiKey()` behandelt HTTP 500 als "gültig mit Warning" — die Fabric API gibt gelegentlich 500 bei gültigen Keys zurück
 - Safari Extension benötigt Xcode-Projekt als App-Container
@@ -186,5 +211,5 @@ X-Api-Key: <api-key>
 
 - **Keyboard Shortcut `Alt+Shift+F`**: Kann mit Browser- oder OS-Shortcuts kollidieren. In Chrome unter `chrome://extensions/shortcuts` änderbar, in Safari fest.
 - **Duplikat-Erkennung**: Nicht implementiert — Fabric API v2 bietet keinen "Search by URL"-Endpoint.
-- **Content Script `chrome.*` API**: Nutzt aktuell direkt `chrome.*` statt des Polyfills. Bei Safari-Portierung muss dies auf `browser.*` angepasst werden (oder ein Inline-Polyfill eingebaut werden).
 - **Playlist-Scraping**: Nur aktuell geladene Videos werden erkannt. YouTube lädt Playlists lazy — User muss scrollen, um mehr Videos zu laden.
+- **Playlist-Bulk-Save**: Läuft im Popup-Kontext — Schließen des Popups bricht den Vorgang ab.

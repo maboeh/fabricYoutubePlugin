@@ -1,6 +1,7 @@
 // Options page JavaScript
-import { STORAGE_KEYS, DEFAULT_CONFIG, getStorage, setStorage } from './shared/constants.js';
-import { api } from './shared/browser-api.js';
+import { STORAGE_KEYS, DEFAULT_CONFIG, TIMEOUTS, getStorage, setStorage } from './shared/constants.js';
+import { sendMessageWithTimeout } from './shared/messaging.js';
+import { normalizeApiBaseUrl, normalizeEndpoint } from './shared/url.js';
 
 const elements = {
   apiBaseUrl: document.getElementById('api-base-url'),
@@ -14,7 +15,8 @@ const elements = {
   saveSettingsBtn: document.getElementById('save-settings'),
   testConnectionBtn: document.getElementById('test-connection'),
   successMessage: document.getElementById('success-message'),
-  errorMessage: document.getElementById('error-message')
+  errorMessage: document.getElementById('error-message'),
+  toggleApiKeyVisibility: document.getElementById('toggle-api-key-visibility')
 };
 
 // Load settings when page opens
@@ -23,6 +25,17 @@ document.addEventListener('DOMContentLoaded', loadSettings);
 // Event listeners
 elements.saveSettingsBtn.addEventListener('click', saveSettings);
 elements.testConnectionBtn.addEventListener('click', testConnection);
+if (elements.toggleApiKeyVisibility) {
+  elements.toggleApiKeyVisibility.addEventListener('click', () => {
+    const isPassword = elements.apiKey.type === 'password';
+    elements.apiKey.type = isPassword ? 'text' : 'password';
+    elements.toggleApiKeyVisibility.textContent = isPassword ? 'Verbergen' : 'Anzeigen';
+    elements.toggleApiKeyVisibility.setAttribute(
+      'aria-label',
+      isPassword ? 'API Key verbergen' : 'API Key anzeigen'
+    );
+  });
+}
 
 // Load settings from storage
 async function loadSettings() {
@@ -49,28 +62,48 @@ async function loadSettings() {
   elements.autoCopyUrl.checked = settings[STORAGE_KEYS.AUTO_COPY_URL] === true;
 }
 
+// Collect validated settings object (or throw via return of error)
+function collectValidatedSettings() {
+  const urlResult = normalizeApiBaseUrl(elements.apiBaseUrl.value);
+  if (!urlResult.ok) {
+    return { ok: false, error: urlResult.error };
+  }
+
+  return {
+    ok: true,
+    settings: {
+      [STORAGE_KEYS.API_BASE_URL]: urlResult.value,
+      [STORAGE_KEYS.API_ENDPOINT]: normalizeEndpoint(elements.apiEndpoint.value),
+      [STORAGE_KEYS.API_KEY]: elements.apiKey.value.trim(),
+      [STORAGE_KEYS.AUTH_TYPE]: elements.authType.value,
+      [STORAGE_KEYS.DEFAULT_PARENT_ID]: elements.defaultParentId.value.trim() || DEFAULT_CONFIG.defaultParentId,
+      [STORAGE_KEYS.SHOW_FLOATING_BUTTON]: elements.showFloatingButton.checked,
+      [STORAGE_KEYS.SHOW_NOTIFICATIONS]: elements.showNotifications.checked,
+      [STORAGE_KEYS.AUTO_COPY_URL]: elements.autoCopyUrl.checked
+    }
+  };
+}
+
 // Save settings to storage
 async function saveSettings() {
-  const settings = {
-    [STORAGE_KEYS.API_BASE_URL]: elements.apiBaseUrl.value.trim(),
-    [STORAGE_KEYS.API_ENDPOINT]: elements.apiEndpoint.value.trim(),
-    [STORAGE_KEYS.API_KEY]: elements.apiKey.value.trim(),
-    [STORAGE_KEYS.AUTH_TYPE]: elements.authType.value,
-    [STORAGE_KEYS.DEFAULT_PARENT_ID]: elements.defaultParentId.value.trim() || DEFAULT_CONFIG.defaultParentId,
-    [STORAGE_KEYS.SHOW_FLOATING_BUTTON]: elements.showFloatingButton.checked,
-    [STORAGE_KEYS.SHOW_NOTIFICATIONS]: elements.showNotifications.checked,
-    [STORAGE_KEYS.AUTO_COPY_URL]: elements.autoCopyUrl.checked
-  };
+  const collected = collectValidatedSettings();
+  if (!collected.ok) {
+    showMessage('error', collected.error);
+    return;
+  }
 
   try {
-    await setStorage(settings);
+    await setStorage(collected.settings);
+    // Reflect normalized URL back into the form
+    elements.apiBaseUrl.value = collected.settings[STORAGE_KEYS.API_BASE_URL];
+    elements.apiEndpoint.value = collected.settings[STORAGE_KEYS.API_ENDPOINT];
     showMessage('success', 'Einstellungen erfolgreich gespeichert!');
   } catch (error) {
     showMessage('error', 'Fehler beim Speichern: ' + error.message);
   }
 }
 
-// Test API connection via background script (consistent auth handling, avoids CORS)
+// Test API connection via background script — does NOT save settings
 async function testConnection() {
   const apiKey = elements.apiKey.value.trim();
 
@@ -79,30 +112,28 @@ async function testConnection() {
     return;
   }
 
+  const urlResult = normalizeApiBaseUrl(elements.apiBaseUrl.value);
+  if (!urlResult.ok) {
+    showMessage('error', urlResult.error);
+    return;
+  }
+
   elements.testConnectionBtn.textContent = 'Teste...';
   elements.testConnectionBtn.disabled = true;
 
   try {
-    // Save settings first so background uses current config
-    await saveSettings();
-
-    const result = await new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        resolve({ valid: false, error: 'Zeitüberschreitung. Bitte Extension neu laden.' });
-      }, 15000);
-
-      api.runtime.sendMessage(
-        { action: 'validateApiKey', apiKey },
-        (response) => {
-          clearTimeout(timer);
-          if (api.runtime.lastError) {
-            resolve({ valid: false, error: 'Hintergrund-Skript nicht erreichbar. Bitte Extension neu laden.' });
-            return;
-          }
-          resolve(response || { valid: false, error: 'Keine Antwort' });
+    const result = await sendMessageWithTimeout(
+      {
+        action: 'validateApiKey',
+        apiKey,
+        configOverride: {
+          apiUrl: urlResult.value,
+          endpoint: normalizeEndpoint(elements.apiEndpoint.value),
+          authType: elements.authType.value
         }
-      );
-    });
+      },
+      TIMEOUTS.VALIDATE_API_KEY_MS
+    );
 
     if (result.valid) {
       const msg = result.warning

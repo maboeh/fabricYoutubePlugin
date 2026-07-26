@@ -10,6 +10,9 @@
   <div class="container">
     <header>
       <h1>YouTube to Fabric</h1>
+      <div class="header-actions">
+        <button type="button" id="open-options" class="btn-link" aria-label="Einstellungen öffnen">Einstellungen</button>
+      </div>
     </header>
 
     <!-- Login Section -->
@@ -17,7 +20,10 @@
       <p class="info-text">Melde dich bei deinem Fabric.so Konto an:</p>
       <div class="form-group">
         <label for="api-key">API Key:</label>
-        <input type="password" id="api-key" placeholder="Dein Fabric API Key">
+        <div class="input-with-toggle">
+          <input type="password" id="api-key" placeholder="Dein Fabric API Key" autocomplete="off">
+          <button type="button" id="toggle-api-key-visibility" class="btn-ghost" aria-label="API Key anzeigen">Anzeigen</button>
+        </div>
         <small class="help-text">
           Erstelle einen API Key unter Fabric.so &gt; Einstellungen &gt; API Keys
         </small>
@@ -45,14 +51,16 @@
         </div>
       </div>
       <div class="extra-fields">
-        <input type="text" id="custom-tags" placeholder="Tags, z.B. Tutorial, React" class="input-small">
-        <textarea id="custom-note" rows="2" placeholder="Optionale Notiz..." class="input-small"></textarea>
+        <label class="visually-hidden" for="custom-tags">Tags</label>
+        <input type="text" id="custom-tags" placeholder="Tags, z.B. Tutorial, React" class="input-small" aria-label="Tags, kommagetrennt">
+        <label class="visually-hidden" for="custom-note">Notiz</label>
+        <textarea id="custom-note" rows="2" placeholder="Optionale Notiz..." class="input-small" aria-label="Optionale Notiz"></textarea>
       </div>
       <button id="save-to-fabric" class="btn btn-primary btn-large">
         <span class="btn-icon">+</span>
         <span class="btn-text">In Fabric speichern</span>
       </button>
-      <p class="shortcut-hint">Tipp: Nutze <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> als Shortcut</p>
+      <p class="shortcut-hint" id="shortcut-hint">Tipp: Nutze <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> als Shortcut</p>
     </div>
 
     <!-- No Video Section -->
@@ -77,19 +85,26 @@
         <span class="btn-icon">+</span>
         <span class="btn-text">Alle Videos speichern</span>
       </button>
+      <div id="playlist-confirm" class="playlist-confirm hidden" role="dialog" aria-labelledby="playlist-confirm-text">
+        <p id="playlist-confirm-text">Videos in Fabric speichern?</p>
+        <div class="playlist-confirm-actions">
+          <button type="button" id="playlist-confirm-yes" class="btn btn-primary">Ja, speichern</button>
+          <button type="button" id="playlist-confirm-no" class="btn btn-secondary">Abbrechen</button>
+        </div>
+      </div>
       <div id="playlist-progress" class="playlist-progress hidden">
         <div class="progress-bar">
           <div id="progress-fill" class="progress-fill"></div>
         </div>
         <p id="progress-text" class="progress-text">0 von 0 Videos...</p>
       </div>
-      <p class="shortcut-hint">Scrolle in der Playlist um mehr Videos zu laden</p>
+      <p id="playlist-hint" class="shortcut-hint">Scrolle in der Playlist um mehr Videos zu laden</p>
     </div>
 
     <!-- Success Message -->
     <div id="success-message" class="message success hidden" role="status" aria-live="polite">
       <span class="message-icon">&#10003;</span>
-      <span>Video erfolgreich in Fabric gespeichert!</span>
+      <span id="success-text">Video erfolgreich in Fabric gespeichert!</span>
       <button class="dismiss-btn" aria-label="Schließen">&times;</button>
     </div>
 

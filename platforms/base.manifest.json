@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "YouTube to Fabric",
-  "description": "Save YouTube videos as link notes to your Fabric.so account",
-  "version": "1.0.0",
+  "description": "YouTube-Videos als Lesezeichen in deinem Fabric.so Konto speichern",
+  "version": "0.0.0",
   "permissions": [
     "activeTab",
     "storage",
@@ -45,16 +45,9 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.youtube.com/*",
-        "https://youtube.com/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "content.css"
-      ],
+      "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
       "run_at": "document_idle"
     }
   ],
