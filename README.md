@@ -44,6 +44,12 @@ git clone https://github.com/maboeh/fabricYoutubePlugin.git
 
 Der Key wird lokal gespeichert und für alle zukünftigen Anfragen verwendet.
 
+## Sicherheit
+
+- Der Fabric API Key bleibt **nur auf deinem Gerät** (Browser-Storage der Extension).
+- **Nicht** in Issues, Pull Requests oder Screenshots posten.
+- Details für Nutzer und Entwickler: [`SECURITY.md`](SECURITY.md)
+
 ## Verwendung
 
 ### Option 1: Popup
